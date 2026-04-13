@@ -12,7 +12,7 @@ export class LintProjectUseCase {
   execute(
     workflow: ArchitectureLintWorkflowContract,
   ): ArchitectureLintResultContract {
-    const result = this.lintPort.lintProject(workflow.rootURL);
+    const result = this.lintPort.lintProject(workflow);
     const { diagnosticRulePrefix } = workflow;
     if (!diagnosticRulePrefix) {
       return result;

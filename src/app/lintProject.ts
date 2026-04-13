@@ -4,19 +4,22 @@ import { pathToFileURL } from "node:url";
 import {
   DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
   type ArchitectureLinterConfiguration,
-} from "./app/configuration/ArchitectureLinterConfiguration.ts";
-import { ArchitectureLinter } from "./app/dependency-injection/ArchitectureLinter.ts";
-import type { ArchitectureLintResult } from "./application/contracts/ports/ArchitectureLintResultContract.ts";
-import { ArchitectureLintScope } from "./application/contracts/workflow/ArchitectureLintScope.ts";
-import { DefaultArchitecturePolicies } from "./domain/policies/DefaultArchitecturePolicies.ts";
+} from "../Domain/ValueObjects/ArchitectureLinterConfiguration.ts";
+import { ArchitectureLinter } from "./dependency-injection/ArchitectureLinter.ts";
+import type { ArchitectureLintResultContract } from "../Application/contracts/ports/ArchitectureLintResultContract.ts";
+import type { ArchitectureLintScopeContract } from "../Application/contracts/workflow/ArchitectureLintScope.ts";
+import { ArchitectureLintScope } from "../Application/contracts/workflow/ArchitectureLintScope.ts";
+import { DefaultArchitecturePolicies } from "../Domain/Policies/DefaultArchitecturePolicies.ts";
 
 export interface LintProjectInput {
   readonly rootURL: URL | string;
-  readonly scope?: ArchitectureLintScope;
+  readonly scope?: ArchitectureLintScopeContract;
   readonly configuration?: ArchitectureLinterConfiguration;
 }
 
-export function lintProject(input: LintProjectInput): ArchitectureLintResult {
+export function lintProject(
+  input: LintProjectInput,
+): ArchitectureLintResultContract {
   const configuration =
     input.configuration ?? DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION;
 

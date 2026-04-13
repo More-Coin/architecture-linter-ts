@@ -1,11 +1,11 @@
-import type { ArchitecturePolicyProtocol } from "../protocols/ArchitecturePolicyProtocol.ts";
-import { ArchitectureLayer } from "../value-objects/ArchitectureLayer.ts";
-import type { ArchitectureDiagnostic } from "../value-objects/ArchitectureDiagnostic.ts";
-import type { ArchitectureFile } from "../value-objects/ArchitectureFile.ts";
-import { NominalKind } from "../value-objects/NominalKind.ts";
-import type { ProjectContext } from "../value-objects/ProjectContext.ts";
+import type { ArchitecturePolicyProtocol } from "../Protocols/ArchitecturePolicyProtocol.ts";
+import { ArchitectureLayer } from "../ValueObjects/ArchitectureLayer.ts";
+import type { ArchitectureDiagnostic } from "../ValueObjects/ArchitectureDiagnostic.ts";
+import type { ArchitectureFile } from "../ValueObjects/ArchitectureFile.ts";
+import { NominalKind } from "../ValueObjects/NominalKind.ts";
+import type { ProjectContext } from "../ValueObjects/ProjectContext.ts";
 
-interface AppRoleShapePolicyOptions {
+type AppRoleShapePolicyOptions = Readonly<{
   readonly ruleID: string;
   readonly isMatchingFile: (file: ArchitectureFile) => boolean;
   readonly rolePath: string;
@@ -13,7 +13,7 @@ interface AppRoleShapePolicyOptions {
   readonly expectedRoleDescription: string;
   readonly roleOwnershipDescription: string;
   readonly renameGuidance: string;
-}
+}>;
 
 class AppRoleShapePolicy implements ArchitecturePolicyProtocol {
   constructor(private readonly options: AppRoleShapePolicyOptions) {}

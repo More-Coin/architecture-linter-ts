@@ -1,139 +1,139 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { ArchitectureLintScope } from "../../application/contracts/workflow/ArchitectureLintScope.ts";
-import { ArchitectureLinterPresentationError } from "../errors/ArchitectureLinterPresentationError.ts";
+import {
+  ArchitectureLintScope,
+  ArchitectureLintScopeContract,
+} from "../../Application/contracts/workflow/ArchitectureLintScope.ts";
+import { ArchitectureLinterPresentationErrors } from "../errors/ArchitectureLinterPresentationError.ts";
 
-export class ArchitectureLinterCommandDTO {
-  readonly rootURL: URL;
-  readonly scope: ArchitectureLintScope;
-  readonly configURL?: URL;
-  readonly helpRequested: boolean;
+export type ArchitectureLinterCommandDTO = Readonly<{
+  rootURL: URL;
+  scope: ArchitectureLintScopeContract;
+  configURL?: URL;
+  helpRequested: boolean;
+}>;
 
-  constructor(
-    arguments_: readonly string[],
-    currentWorkingDirectory = process.cwd(),
-  ) {
-    const defaultRootPath = "./src";
-    const userArguments = ArchitectureLinterCommandDTO.userArguments(arguments_);
-    const helpRequested =
-      userArguments.includes("--help") || userArguments.includes("-h");
+export function parseArchitectureLinterCommandDTO(
+  arguments_: readonly string[],
+  currentWorkingDirectory = process.cwd(),
+): ArchitectureLinterCommandDTO {
+  const defaultRootPath = "./src";
+  const userArguments = architectureLinterUserArguments(arguments_);
+  const helpRequested =
+    userArguments.includes("--help") || userArguments.includes("-h");
 
-    let rootPath = defaultRootPath;
-    let scope = ArchitectureLintScope.All;
-    let configPath: string | undefined;
-    let hasSeenScope = false;
-    let index = 0;
+  let rootPath = defaultRootPath;
+  let scope = ArchitectureLintScopeContract.All;
+  let configPath: string | undefined;
+  let hasSeenScope = false;
+  let index = 0;
 
-    this.helpRequested = helpRequested;
-
-    if (helpRequested) {
-      this.rootURL = pathToFileURL(
+  if (helpRequested) {
+    return {
+      rootURL: pathToFileURL(
         path.resolve(currentWorkingDirectory, defaultRootPath),
-      );
-      this.scope = scope;
-      this.configURL = undefined;
-      return;
-    }
+      ),
+      scope,
+      helpRequested,
+    };
+  }
 
-    while (index < userArguments.length) {
-      const argument = userArguments[index];
+  while (index < userArguments.length) {
+    const argument = userArguments[index];
 
-      switch (argument) {
-        case "--scope": {
-          const value = userArguments[index + 1];
-          if (hasSeenScope || !ArchitectureLinterCommandDTO.isScopeValue(value)) {
-            throw ArchitectureLinterPresentationError.invalidArguments();
-          }
-
-          scope = value;
-          hasSeenScope = true;
-          index += 2;
-          break;
+    switch (argument) {
+      case "--scope": {
+        const value = userArguments[index + 1];
+        if (hasSeenScope || !isScopeValue(value)) {
+          throw ArchitectureLinterPresentationErrors.invalidArguments();
         }
 
-        case "--config": {
-          const value = userArguments[index + 1];
-          if (
-            configPath ||
-            !ArchitectureLinterCommandDTO.isFlagValue(value)
-          ) {
-            throw ArchitectureLinterPresentationError.invalidArguments();
-          }
+        scope = value;
+        hasSeenScope = true;
+        index += 2;
+        break;
+      }
 
-          configPath = value;
-          index += 2;
-          break;
+      case "--config": {
+        const value = userArguments[index + 1];
+        if (configPath || !isFlagValue(value)) {
+          throw ArchitectureLinterPresentationErrors.invalidArguments();
         }
 
-        default: {
-          if (argument.startsWith("--") || rootPath !== defaultRootPath) {
-            throw ArchitectureLinterPresentationError.invalidArguments();
-          }
+        configPath = value;
+        index += 2;
+        break;
+      }
 
-          rootPath = argument;
-          index += 1;
+      default: {
+        if (argument.startsWith("--") || rootPath !== defaultRootPath) {
+          throw ArchitectureLinterPresentationErrors.invalidArguments();
         }
+
+        rootPath = argument;
+        index += 1;
       }
     }
+  }
 
-    this.rootURL = pathToFileURL(
-      path.resolve(currentWorkingDirectory, rootPath),
-    );
-    this.scope = scope;
-    this.configURL = configPath
+  return {
+    rootURL: pathToFileURL(path.resolve(currentWorkingDirectory, rootPath)),
+    scope,
+    configURL: configPath
       ? pathToFileURL(path.resolve(currentWorkingDirectory, configPath))
-      : undefined;
+      : undefined,
+    helpRequested,
+  };
+}
+
+function architectureLinterUserArguments(
+  arguments_: readonly string[],
+): readonly string[] {
+  if (arguments_.length === 0) {
+    return [];
   }
 
-  private static userArguments(arguments_: readonly string[]): readonly string[] {
-    if (arguments_.length === 0) {
-      return [];
-    }
-
-    const [firstArgument, secondArgument] = arguments_;
-    if (this.looksLikeRuntimeExecutable(firstArgument) && secondArgument) {
-      return arguments_.slice(2);
-    }
-
-    if (this.looksLikeCLIExecutable(firstArgument)) {
-      return arguments_.slice(1);
-    }
-
-    return [...arguments_];
+  const [firstArgument, secondArgument] = arguments_;
+  if (looksLikeRuntimeExecutable(firstArgument) && secondArgument) {
+    return arguments_.slice(2);
   }
 
-  private static isFlagValue(value: string | undefined): value is string {
-    return Boolean(value && !value.startsWith("--"));
+  if (looksLikeCLIExecutable(firstArgument)) {
+    return arguments_.slice(1);
   }
 
-  private static isScopeValue(
-    value: string | undefined,
-  ): value is ArchitectureLintScope {
-    return (
-      value === ArchitectureLintScope.All || value === ArchitectureLintScope.Tests
-    );
-  }
+  return [...arguments_];
+}
 
-  private static looksLikeRuntimeExecutable(argument: string): boolean {
-    const executableName = path.basename(argument).toLowerCase();
+function isFlagValue(value: string | undefined): value is string {
+  return Boolean(value && !value.startsWith("--"));
+}
 
-    return new Set([
-      "node",
-      "node.exe",
-      "tsx",
-      "tsx.cmd",
-      "ts-node",
-      "ts-node.cmd",
-      "ts-node-esm",
-      "ts-node-esm.cmd",
-      "bun",
-      "bun.exe",
-    ]).has(executableName);
-  }
+function isScopeValue(
+  value: string | undefined,
+): value is ArchitectureLintScopeContract {
+  return value === ArchitectureLintScope.All || value === ArchitectureLintScope.Tests;
+}
 
-  private static looksLikeCLIExecutable(argument: string): boolean {
-    const executableName = path.basename(argument, path.extname(argument));
-    return executableName === "architecture-linter";
-  }
+function looksLikeRuntimeExecutable(argument: string): boolean {
+  const executableName = path.basename(argument).toLowerCase();
+
+  return new Set([
+    "node",
+    "node.exe",
+    "tsx",
+    "tsx.cmd",
+    "ts-node",
+    "ts-node.cmd",
+    "ts-node-esm",
+    "ts-node-esm.cmd",
+    "bun",
+    "bun.exe",
+  ]).has(executableName);
+}
+
+function looksLikeCLIExecutable(argument: string): boolean {
+  const executableName = path.basename(argument, path.extname(argument));
+  return executableName === "architecture-linter";
 }

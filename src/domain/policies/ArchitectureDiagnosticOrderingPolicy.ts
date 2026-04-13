@@ -1,4 +1,4 @@
-import type { ArchitectureDiagnostic } from "../value-objects/ArchitectureDiagnostic.ts";
+import type { ArchitectureDiagnostic } from "../ValueObjects/ArchitectureDiagnostic.ts";
 
 export class ArchitectureDiagnosticOrderingPolicy {
   ordered(

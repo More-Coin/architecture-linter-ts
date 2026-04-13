@@ -1,22 +1,22 @@
-import type { ArchitecturePolicyProtocol } from "../protocols/ArchitecturePolicyProtocol.ts";
-import { ArchitectureLayer } from "../value-objects/ArchitectureLayer.ts";
-import type { ArchitectureComputedPropertyDeclaration } from "../value-objects/ArchitectureComputedPropertyDeclaration.ts";
-import type { ArchitectureDiagnostic } from "../value-objects/ArchitectureDiagnostic.ts";
-import type { ArchitectureFile } from "../value-objects/ArchitectureFile.ts";
-import type { ArchitectureIdentifierOccurrence } from "../value-objects/ArchitectureIdentifierOccurrence.ts";
-import type { ArchitectureConstructorDeclaration } from "../value-objects/ArchitectureConstructorDeclaration.ts";
-import type { ArchitectureMemberCallOccurrence } from "../value-objects/ArchitectureMemberCallOccurrence.ts";
-import type { ArchitectureMethodDeclaration } from "../value-objects/ArchitectureMethodDeclaration.ts";
-import type { ArchitectureNestedNominalDeclaration } from "../value-objects/ArchitectureNestedNominalDeclaration.ts";
-import { NominalKind } from "../value-objects/NominalKind.ts";
-import type { ArchitectureOperationalUseOccurrence } from "../value-objects/ArchitectureOperationalUseOccurrence.ts";
-import type { ArchitectureStoredMemberDeclaration } from "../value-objects/ArchitectureStoredMemberDeclaration.ts";
-import type { ArchitectureStringLiteralOccurrence } from "../value-objects/ArchitectureStringLiteralOccurrence.ts";
-import type { ArchitectureTopLevelDeclaration } from "../value-objects/ArchitectureTopLevelDeclaration.ts";
-import type { ArchitectureTypeReference } from "../value-objects/ArchitectureTypeReference.ts";
-import type { IndexedDeclaration } from "../value-objects/IndexedDeclaration.ts";
-import type { ProjectContext } from "../value-objects/ProjectContext.ts";
-import { RoleFolder } from "../value-objects/RoleFolder.ts";
+import type { ArchitecturePolicyProtocol } from "../Protocols/ArchitecturePolicyProtocol.ts";
+import { ArchitectureLayer } from "../ValueObjects/ArchitectureLayer.ts";
+import type { ArchitectureComputedPropertyDeclaration } from "../ValueObjects/ArchitectureComputedPropertyDeclaration.ts";
+import type { ArchitectureDiagnostic } from "../ValueObjects/ArchitectureDiagnostic.ts";
+import type { ArchitectureFile } from "../ValueObjects/ArchitectureFile.ts";
+import type { ArchitectureIdentifierOccurrence } from "../ValueObjects/ArchitectureIdentifierOccurrence.ts";
+import type { ArchitectureConstructorDeclaration } from "../ValueObjects/ArchitectureConstructorDeclaration.ts";
+import type { ArchitectureMemberCallOccurrence } from "../ValueObjects/ArchitectureMemberCallOccurrence.ts";
+import type { ArchitectureMethodDeclaration } from "../ValueObjects/ArchitectureMethodDeclaration.ts";
+import type { ArchitectureNestedNominalDeclaration } from "../ValueObjects/ArchitectureNestedNominalDeclaration.ts";
+import { NominalKind } from "../ValueObjects/NominalKind.ts";
+import type { ArchitectureOperationalUseOccurrence } from "../ValueObjects/ArchitectureOperationalUseOccurrence.ts";
+import type { ArchitectureStoredMemberDeclaration } from "../ValueObjects/ArchitectureStoredMemberDeclaration.ts";
+import type { ArchitectureStringLiteralOccurrence } from "../ValueObjects/ArchitectureStringLiteralOccurrence.ts";
+import type { ArchitectureTopLevelDeclaration } from "../ValueObjects/ArchitectureTopLevelDeclaration.ts";
+import type { ArchitectureTypeReference } from "../ValueObjects/ArchitectureTypeReference.ts";
+import type { IndexedDeclaration } from "../ValueObjects/IndexedDeclaration.ts";
+import type { ProjectContext } from "../ValueObjects/ProjectContext.ts";
+import { RoleFolder } from "../ValueObjects/RoleFolder.ts";
 
 export class ApplicationOuterLayerReferencePolicy
   implements ArchitecturePolicyProtocol
@@ -2210,11 +2210,11 @@ function normalizeTaxonomyTerm(value: string): string {
   return value.toLowerCase().replaceAll(/[^a-z]/g, "");
 }
 
-interface ApplicationServiceProjectionSinkDependency {
+type ApplicationServiceProjectionSinkDependency = Readonly<{
   readonly memberName: string;
   readonly sourceContractNames: ReadonlySet<string>;
   readonly targetContractNames: ReadonlySet<string>;
-}
+}>;
 
 function isNestedApplicationServiceTechnicalProjectionHelper(
   declaration: ArchitectureNestedNominalDeclaration,

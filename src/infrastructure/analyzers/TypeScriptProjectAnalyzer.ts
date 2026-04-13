@@ -22,11 +22,11 @@ import {
   type SourceFile,
 } from "ts-morph";
 
-import type { ArchitectureLinterConfiguration } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
-import { ArchitecturePathClassificationPolicy } from "../../domain/policies/ArchitecturePathClassificationPolicy.ts";
-import { ArchitectureFile } from "../../domain/value-objects/ArchitectureFile.ts";
-import { NominalKind } from "../../domain/value-objects/NominalKind.ts";
-import type { SourceCoordinate } from "../../domain/value-objects/SourceCoordinate.ts";
+import type { ArchitectureLinterConfiguration } from "../../Domain/ValueObjects/ArchitectureLinterConfiguration.ts";
+import { ArchitecturePathClassificationPolicy } from "../../Domain/Policies/ArchitecturePathClassificationPolicy.ts";
+import { ArchitectureFile } from "../../Domain/ValueObjects/ArchitectureFile.ts";
+import { NominalKind } from "../../Domain/ValueObjects/NominalKind.ts";
+import type { SourceCoordinate } from "../../Domain/ValueObjects/SourceCoordinate.ts";
 import { LinterRepoRelativePathModel } from "../translation/LinterRepoRelativePathModel.ts";
 
 const BUILTIN_TYPE_NAMES = new Set([

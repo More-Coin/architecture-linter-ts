@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { ArchitectureLintScope } from "../../src/application/contracts/workflow/ArchitectureLintScope.ts";
-import { ArchitectureLinterCommandDTO } from "../../src/presentation/dtos/ArchitectureLinterCommandDTO.ts";
+import { ArchitectureLintScope } from "../../src/Application/contracts/workflow/ArchitectureLintScope.ts";
+import { parseArchitectureLinterCommandDTO } from "../../src/Presentation/dtos/ArchitectureLinterCommandDTO.ts";
 
 test("command DTO defaults the lint root to ./src", () => {
-  const command = new ArchitectureLinterCommandDTO(
+  const command = parseArchitectureLinterCommandDTO(
     [],
     "/workspace/project",
   );
@@ -16,7 +16,7 @@ test("command DTO defaults the lint root to ./src", () => {
 });
 
 test("command DTO still accepts an explicit root path override", () => {
-  const command = new ArchitectureLinterCommandDTO(
+  const command = parseArchitectureLinterCommandDTO(
     ["tests"],
     "/workspace/project",
   );
@@ -27,7 +27,7 @@ test("command DTO still accepts an explicit root path override", () => {
 });
 
 test("command DTO treats help flags as a help request", () => {
-  const command = new ArchitectureLinterCommandDTO(
+  const command = parseArchitectureLinterCommandDTO(
     ["--help"],
     "/workspace/project",
   );

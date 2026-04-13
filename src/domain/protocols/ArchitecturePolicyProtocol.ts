@@ -1,6 +1,6 @@
-import type { ArchitectureDiagnostic } from "../value-objects/ArchitectureDiagnostic.ts";
-import type { ArchitectureFile } from "../value-objects/ArchitectureFile.ts";
-import type { ProjectContext } from "../value-objects/ProjectContext.ts";
+import type { ArchitectureDiagnostic } from "../ValueObjects/ArchitectureDiagnostic.ts";
+import type { ArchitectureFile } from "../ValueObjects/ArchitectureFile.ts";
+import type { ProjectContext } from "../ValueObjects/ProjectContext.ts";
 
 export interface ArchitecturePolicyProtocol {
   evaluate(

@@ -1,4 +1,4 @@
-import type { ArchitectureLinterConfiguration } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
+import type { ArchitectureLinterConfiguration } from "../ValueObjects/ArchitectureLinterConfiguration.ts";
 import {
   SourceRootLayoutPolicy,
 } from "./SourceRootArchitecturePolicies.ts";
@@ -116,15 +116,15 @@ import {
   TestsSharedSupportPlacementPolicy,
   TestsTestDoublesOnlySupportPolicy,
 } from "./TestArchitecturePolicies.ts";
-import type { ArchitecturePolicyProtocol } from "../protocols/ArchitecturePolicyProtocol.ts";
-import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
+import type { ArchitecturePolicyProtocol } from "../Protocols/ArchitecturePolicyProtocol.ts";
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../ValueObjects/ArchitectureLinterConfiguration.ts";
 
-interface RegisteredArchitecturePolicy {
+type RegisteredArchitecturePolicy = Readonly<{
   readonly ruleID: string;
   readonly make: (
     configuration: ArchitectureLinterConfiguration,
   ) => ArchitecturePolicyProtocol;
-}
+}>;
 
 export class DefaultArchitecturePolicies {
   static make(

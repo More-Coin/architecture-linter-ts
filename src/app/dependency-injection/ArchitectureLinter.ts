@@ -1,17 +1,26 @@
-import type { ArchitectureLintResult } from "../../application/contracts/ports/ArchitectureLintResultContract.ts";
-import {
-  ArchitectureLintScope,
-  diagnosticRulePrefixForScope,
-} from "../../application/contracts/workflow/ArchitectureLintScope.ts";
-import { ArchitectureLinterService } from "../../application/services/ArchitectureLinterService.ts";
-import type { SourceFileDiscoveryPortProtocol } from "../../application/ports/protocols/SourceFileDiscoveryPortProtocol.ts";
-import { LintProjectUseCase } from "../../application/use-cases/LintProjectUseCase.ts";
-import type { ArchitectureLinterConfiguration } from "../configuration/ArchitectureLinterConfiguration.ts";
-import type { ArchitecturePolicyProtocol } from "../../domain/protocols/ArchitecturePolicyProtocol.ts";
-import { SourceFileDiscoveryGateway } from "../../infrastructure/gateways/SourceFileDiscoveryGateway.ts";
-import { ArchitectureLinterPortAdapter } from "../../infrastructure/port-adapters/ArchitectureLinterPortAdapter.ts";
+import type { ArchitectureLintResultContract } from "../../Application/contracts/ports/ArchitectureLintResultContract.ts";
+import { ArchitectureLintScopeContract } from "../../Application/contracts/workflow/ArchitectureLintScope.ts";
+import type { ArchitectureLinterConfigurationPortProtocol } from "../../Application/ports/protocols/ArchitectureLinterConfigurationPortProtocol.ts";
+import type { SourceFileDiscoveryPortProtocol } from "../../Application/ports/protocols/SourceFileDiscoveryPortProtocol.ts";
+import { ArchitectureLinterService } from "../../Application/services/ArchitectureLinterService.ts";
+import { LintProjectUseCase } from "../../Application/use-cases/LintProjectUseCase.ts";
+import type { ArchitectureLinterConfiguration } from "../../Domain/ValueObjects/ArchitectureLinterConfiguration.ts";
+import type { ArchitecturePolicyProtocol } from "../../Domain/Protocols/ArchitecturePolicyProtocol.ts";
+import { ArchitectureLinterPortAdapter } from "../../Infrastructure/port-adapters/ArchitectureLinterPortAdapter.ts";
 
-export class ArchitectureLinter {
+const FixedArchitectureLinterConfigurationPortAdapter = class
+  implements ArchitectureLinterConfigurationPortProtocol
+{
+  constructor(private readonly configuration: ArchitectureLinterConfiguration) {}
+
+  loadConfiguration(_command: {
+    readonly rootURL: URL;
+  }): ArchitectureLinterConfiguration {
+    return this.configuration;
+  }
+};
+
+export class ArchitectureLinterDI {
   private readonly service: ArchitectureLinterService;
 
   constructor(input: {
@@ -20,25 +29,27 @@ export class ArchitectureLinter {
     sourceFileDiscovery?: SourceFileDiscoveryPortProtocol;
   }) {
     const lintPortAdapter = new ArchitectureLinterPortAdapter({
-      configuration: input.configuration,
       policies: input.policies,
-      sourceFileDiscovery:
-        input.sourceFileDiscovery ??
-        new SourceFileDiscoveryGateway(input.configuration.sourceExtensions),
+      ...(input.sourceFileDiscovery
+        ? { sourceFileDiscovery: input.sourceFileDiscovery }
+        : {}),
     });
     const lintProjectUseCase = new LintProjectUseCase(lintPortAdapter);
-    this.service = new ArchitectureLinterService(lintProjectUseCase);
+    this.service = new ArchitectureLinterService(
+      lintProjectUseCase,
+      new FixedArchitectureLinterConfigurationPortAdapter(input.configuration),
+    );
   }
 
   lintProject(
     at: URL,
-    scope: ArchitectureLintScope = ArchitectureLintScope.All,
-  ): ArchitectureLintResult {
-    const diagnosticRulePrefix = diagnosticRulePrefixForScope(scope);
-
+    scope: ArchitectureLintScopeContract = ArchitectureLintScopeContract.All,
+  ): ArchitectureLintResultContract {
     return this.service.execute({
       rootURL: at,
-      ...(diagnosticRulePrefix ? { diagnosticRulePrefix } : {}),
+      scope,
     });
   }
 }
+
+export const ArchitectureLinter = ArchitectureLinterDI;

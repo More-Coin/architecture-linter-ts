@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import type { SourceFileDiscoveryPortProtocol } from "../../application/ports/protocols/SourceFileDiscoveryPortProtocol.ts";
+import type { SourceFileDiscoveryPortProtocol } from "../../Application/ports/protocols/SourceFileDiscoveryPortProtocol.ts";
 import { ArchitectureLinterInfrastructureError } from "../errors/ArchitectureLinterInfrastructureError.ts";
 import { LinterRepoRelativePathModel } from "../translation/LinterRepoRelativePathModel.ts";
 

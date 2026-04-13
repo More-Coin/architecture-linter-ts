@@ -40,7 +40,7 @@
   ],
   "scripts": {
     "build": "tsup",
-    "start": "node --experimental-transform-types ./src/cli.ts",
+    "start": "node --experimental-transform-types ./src/App/main.ts",
     "test": "node --experimental-transform-types --test ./tests/rules/*.test.ts",
     "test:package": "node ./tests/scripts/package-smoke.mjs",
     "prepare": "npm run build",

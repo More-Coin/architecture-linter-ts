@@ -1,7 +1,7 @@
-import type { ArchitectureFile } from "../../domain/value-objects/ArchitectureFile.ts";
-import { ProjectContext } from "../../domain/value-objects/ProjectContext.ts";
-import type { IndexedDeclaration } from "../../domain/value-objects/IndexedDeclaration.ts";
-import type { IndexedMethodShape } from "../../domain/value-objects/IndexedMethodShape.ts";
+import type { ArchitectureFile } from "../../Domain/ValueObjects/ArchitectureFile.ts";
+import { ProjectContext } from "../../Domain/ValueObjects/ProjectContext.ts";
+import type { IndexedDeclaration } from "../../Domain/ValueObjects/IndexedDeclaration.ts";
+import type { IndexedMethodShape } from "../../Domain/ValueObjects/IndexedMethodShape.ts";
 
 export class LinterProjectContextModel {
   toDomain(files: readonly ArchitectureFile[]): ProjectContext {

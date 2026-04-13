@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/app/configuration/ArchitectureLinterConfiguration.ts";
-import { ArchitecturePathClassificationPolicy } from "../../src/domain/policies/ArchitecturePathClassificationPolicy.ts";
-import { ArchitectureLayer } from "../../src/domain/value-objects/ArchitectureLayer.ts";
-import { RoleFolder } from "../../src/domain/value-objects/RoleFolder.ts";
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/App/configuration/ArchitectureLinterConfiguration.ts";
+import { ArchitecturePathClassificationPolicy } from "../../src/Domain/Policies/ArchitecturePathClassificationPolicy.ts";
+import { ArchitectureLayer } from "../../src/Domain/ValueObjects/ArchitectureLayer.ts";
+import { RoleFolder } from "../../src/Domain/ValueObjects/RoleFolder.ts";
 
 test("path classification recognizes lowercase source folders using configured layer names", () => {
   const classifier = new ArchitecturePathClassificationPolicy(

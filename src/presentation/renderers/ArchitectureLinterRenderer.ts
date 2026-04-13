@@ -1,6 +1,6 @@
-import type { ArchitectureLintResult } from "../../application/contracts/ports/ArchitectureLintResultContract.ts";
-import type { ArchitectureLinterStructuredErrorProtocol } from "../../application/contracts/errors/ArchitectureLinterStructuredErrorProtocol.ts";
-import type { ArchitectureDiagnostic } from "../../domain/value-objects/ArchitectureDiagnostic.ts";
+import type { ArchitectureLintResultContract } from "../../Application/contracts/ports/ArchitectureLintResultContract.ts";
+import type { StructuredErrorProtocol } from "../../Domain/Protocols/StructuredErrorProtocol.ts";
+import type { ArchitectureDiagnostic } from "../../Domain/ValueObjects/ArchitectureDiagnostic.ts";
 import { ARCHITECTURE_LINTER_HELP_LINES } from "../ArchitectureLinterCLIUsage.ts";
 
 export class ArchitectureLinterRenderer {
@@ -12,7 +12,7 @@ export class ArchitectureLinterRenderer {
     return 0;
   }
 
-  render(result: ArchitectureLintResult): number {
+  render(result: ArchitectureLintResultContract): number {
     for (const diagnostic of result.diagnostics) {
       console.log(this.renderedDiagnostic(diagnostic));
     }
@@ -44,7 +44,7 @@ export class ArchitectureLinterRenderer {
 
   private isStructuredError(
     error: unknown,
-  ): error is ArchitectureLinterStructuredErrorProtocol {
+  ): error is StructuredErrorProtocol {
     if (typeof error !== "object" || error === null) {
       return false;
     }

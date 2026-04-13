@@ -1,14 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { ApplicationUseCasesOperationShapePolicy } from "../../src/domain/policies/ApplicationArchitecturePolicies.ts";
-import { ProjectContext } from "../../src/domain/value-objects/ProjectContext.ts";
-import { ArchitectureFile } from "../../src/domain/value-objects/ArchitectureFile.ts";
-import { ArchitectureLayer } from "../../src/domain/value-objects/ArchitectureLayer.ts";
-import { FileClassification } from "../../src/domain/value-objects/FileClassification.ts";
-import { NominalKind } from "../../src/domain/value-objects/NominalKind.ts";
-import { RoleFolder } from "../../src/domain/value-objects/RoleFolder.ts";
-import type { IndexedDeclaration } from "../../src/domain/value-objects/IndexedDeclaration.ts";
+import { ApplicationUseCasesOperationShapePolicy } from "../../src/Domain/Policies/ApplicationArchitecturePolicies.ts";
+import { ProjectContext } from "../../src/Domain/ValueObjects/ProjectContext.ts";
+import { ArchitectureFile } from "../../src/Domain/ValueObjects/ArchitectureFile.ts";
+import { ArchitectureLayer } from "../../src/Domain/ValueObjects/ArchitectureLayer.ts";
+import { FileClassification } from "../../src/Domain/ValueObjects/FileClassification.ts";
+import { NominalKind } from "../../src/Domain/ValueObjects/NominalKind.ts";
+import { RoleFolder } from "../../src/Domain/ValueObjects/RoleFolder.ts";
+import type { IndexedDeclaration } from "../../src/Domain/ValueObjects/IndexedDeclaration.ts";
 
 test("use case returning application contract counts as operation surface", () => {
   const diagnostics = new ApplicationUseCasesOperationShapePolicy().evaluate(

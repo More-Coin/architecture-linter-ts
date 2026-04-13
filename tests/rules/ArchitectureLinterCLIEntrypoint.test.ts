@@ -1,8 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DefaultArchitecturePolicies } from "../../src/domain/policies/DefaultArchitecturePolicies.ts";
-import { ArchitectureLinterCLIEntrypoint } from "../../src/presentation/entrypoints/ArchitectureLinterCLIEntrypoint.ts";
+import { DefaultArchitecturePolicies } from "../../src/Domain/Policies/DefaultArchitecturePolicies.ts";
+import { LintProjectUseCase } from "../../src/Application/use-cases/LintProjectUseCase.ts";
+import { ArchitectureLinterConfigurationPortAdapter } from "../../src/Infrastructure/port-adapters/ArchitectureLinterConfigurationPortAdapter.ts";
+import { ArchitectureLinterPortAdapter } from "../../src/Infrastructure/port-adapters/ArchitectureLinterPortAdapter.ts";
+import { ArchitectureLinterService } from "../../src/Application/services/ArchitectureLinterService.ts";
+import { ArchitectureLinterCLIEntrypoint } from "../../src/Presentation/entrypoints/ArchitectureLinterCLIEntrypoint.ts";
 
 test("CLI help prints usage and exits successfully", () => {
   const loggedLines: string[] = [];
@@ -15,7 +19,14 @@ test("CLI help prints usage and exits successfully", () => {
   try {
     const exitCode = ArchitectureLinterCLIEntrypoint.run(
       ["architecture-linter", "--help"],
-      DefaultArchitecturePolicies.make,
+      new ArchitectureLinterService(
+        new LintProjectUseCase(
+          new ArchitectureLinterPortAdapter({
+            policies: DefaultArchitecturePolicies.make(),
+          }),
+        ),
+        new ArchitectureLinterConfigurationPortAdapter(),
+      ),
     );
 
     assert.equal(exitCode, 0);

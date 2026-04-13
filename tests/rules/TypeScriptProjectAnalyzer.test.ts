@@ -3,14 +3,14 @@ import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 
-import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/app/configuration/ArchitectureLinterConfiguration.ts";
-import { ArchitectureLinter } from "../../src/app/dependency-injection/ArchitectureLinter.ts";
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/App/configuration/ArchitectureLinterConfiguration.ts";
+import { ArchitectureLinter } from "../../src/App/dependency-injection/ArchitectureLinter.ts";
 import {
   ApplicationUseCasesAbstractionDelegationPolicy,
-  PresentationControllersUseCaseReferencePolicy,
-} from "../../src/domain/policies/index.ts";
-import { SourceFileDiscoveryGateway } from "../../src/infrastructure/gateways/SourceFileDiscoveryGateway.ts";
-import { TypeScriptProjectAnalyzer } from "../../src/infrastructure/analyzers/TypeScriptProjectAnalyzer.ts";
+} from "../../src/Domain/Policies/ApplicationArchitecturePolicies.ts";
+import { PresentationControllersUseCaseReferencePolicy } from "../../src/Domain/Policies/PresentationArchitecturePolicies.ts";
+import { SourceFileDiscoveryGateway } from "../../src/Infrastructure/gateways/SourceFileDiscoveryGateway.ts";
+import { TypeScriptProjectAnalyzer } from "../../src/Infrastructure/analyzers/TypeScriptProjectAnalyzer.ts";
 
 const fixtureRootPath = path.resolve(
   "tests/fixtures/type-script-lint-project",

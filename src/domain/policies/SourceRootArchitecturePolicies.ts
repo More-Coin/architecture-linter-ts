@@ -1,9 +1,9 @@
-import type { ArchitectureLinterConfiguration } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
-import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
-import type { ArchitecturePolicyProtocol } from "../protocols/ArchitecturePolicyProtocol.ts";
-import type { ArchitectureDiagnostic } from "../value-objects/ArchitectureDiagnostic.ts";
-import type { ArchitectureFile } from "../value-objects/ArchitectureFile.ts";
-import type { ProjectContext } from "../value-objects/ProjectContext.ts";
+import type { ArchitectureLinterConfiguration } from "../ValueObjects/ArchitectureLinterConfiguration.ts";
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../ValueObjects/ArchitectureLinterConfiguration.ts";
+import type { ArchitecturePolicyProtocol } from "../Protocols/ArchitecturePolicyProtocol.ts";
+import type { ArchitectureDiagnostic } from "../ValueObjects/ArchitectureDiagnostic.ts";
+import type { ArchitectureFile } from "../ValueObjects/ArchitectureFile.ts";
+import type { ProjectContext } from "../ValueObjects/ProjectContext.ts";
 
 export class SourceRootLayoutPolicy implements ArchitecturePolicyProtocol {
   static readonly ruleID = "source_root.layout";

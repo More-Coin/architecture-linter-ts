@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/app/configuration/ArchitectureLinterConfiguration.ts";
-import { SourceRootLayoutPolicy } from "../../src/domain/policies/SourceRootArchitecturePolicies.ts";
-import { ArchitectureFile } from "../../src/domain/value-objects/ArchitectureFile.ts";
-import { ArchitectureLayer } from "../../src/domain/value-objects/ArchitectureLayer.ts";
-import { FileClassification } from "../../src/domain/value-objects/FileClassification.ts";
-import { ProjectContext } from "../../src/domain/value-objects/ProjectContext.ts";
-import { RoleFolder } from "../../src/domain/value-objects/RoleFolder.ts";
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/App/configuration/ArchitectureLinterConfiguration.ts";
+import { SourceRootLayoutPolicy } from "../../src/Domain/Policies/SourceRootArchitecturePolicies.ts";
+import { ArchitectureFile } from "../../src/Domain/ValueObjects/ArchitectureFile.ts";
+import { ArchitectureLayer } from "../../src/Domain/ValueObjects/ArchitectureLayer.ts";
+import { FileClassification } from "../../src/Domain/ValueObjects/FileClassification.ts";
+import { ProjectContext } from "../../src/Domain/ValueObjects/ProjectContext.ts";
+import { RoleFolder } from "../../src/Domain/ValueObjects/RoleFolder.ts";
 
 test("source root layout policy rejects loose files at the lint root", () => {
   const policy = new SourceRootLayoutPolicy(

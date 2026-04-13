@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DefaultArchitecturePolicies } from "../../src/domain/policies/DefaultArchitecturePolicies.ts";
+import { DefaultArchitecturePolicies } from "../../src/Domain/Policies/DefaultArchitecturePolicies.ts";
 import {
   ApplicationOuterLayerReferencePolicy,
-} from "../../src/domain/policies/index.ts";
-import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/app/configuration/ArchitectureLinterConfiguration.ts";
+} from "../../src/Domain/Policies/ApplicationArchitecturePolicies.ts";
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/App/configuration/ArchitectureLinterConfiguration.ts";
 
 test("default policies include the full currently ported registry", () => {
   const policies = DefaultArchitecturePolicies.make();

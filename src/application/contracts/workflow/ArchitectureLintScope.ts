@@ -1,15 +1,17 @@
-export enum ArchitectureLintScope {
+export enum ArchitectureLintScopeContract {
   All = "all",
   Tests = "tests",
 }
 
+export const ArchitectureLintScope = ArchitectureLintScopeContract;
+
 export function diagnosticRulePrefixForScope(
-  scope: ArchitectureLintScope,
+  scope: ArchitectureLintScopeContract,
 ): string | undefined {
   switch (scope) {
-    case ArchitectureLintScope.All:
+    case ArchitectureLintScopeContract.All:
       return undefined;
-    case ArchitectureLintScope.Tests:
+    case ArchitectureLintScopeContract.Tests:
       return "tests.";
   }
 }

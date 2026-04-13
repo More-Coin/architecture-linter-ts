@@ -1,10 +1,8 @@
-import path from "node:path";
-
-import type { ArchitectureLinterConfiguration } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
-import { ArchitectureLayer } from "../value-objects/ArchitectureLayer.ts";
-import { FileClassification } from "../value-objects/FileClassification.ts";
-import { RoleFolder } from "../value-objects/RoleFolder.ts";
-import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
+import type { ArchitectureLinterConfiguration } from "../ValueObjects/ArchitectureLinterConfiguration.ts";
+import { ArchitectureLayer } from "../ValueObjects/ArchitectureLayer.ts";
+import { FileClassification } from "../ValueObjects/FileClassification.ts";
+import { RoleFolder } from "../ValueObjects/RoleFolder.ts";
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../ValueObjects/ArchitectureLinterConfiguration.ts";
 
 export class ArchitecturePathClassificationPolicy {
   constructor(
@@ -16,7 +14,7 @@ export class ArchitecturePathClassificationPolicy {
     const normalizedPath = repoRelativePath.replaceAll("\\", "/");
     const components = normalizedPath.split("/").filter(Boolean);
     const fileName = components.at(-1) ?? normalizedPath;
-    const fileStem = path.posix.parse(fileName).name;
+    const fileStem = fileName.replace(/\.[^.]+$/, "");
 
     const { layer, layerIndex } = this.detectLayer(components);
     const roleFolder = this.detectRoleFolder(

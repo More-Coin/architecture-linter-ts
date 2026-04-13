@@ -1,14 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/app/configuration/ArchitectureLinterConfiguration.ts";
-import { TestsDiagnosticsLocationPolicy } from "../../src/domain/policies/TestArchitecturePolicies.ts";
-import { ArchitectureFile } from "../../src/domain/value-objects/ArchitectureFile.ts";
-import { ArchitectureLayer } from "../../src/domain/value-objects/ArchitectureLayer.ts";
-import { FileClassification } from "../../src/domain/value-objects/FileClassification.ts";
-import { NominalKind } from "../../src/domain/value-objects/NominalKind.ts";
-import { ProjectContext } from "../../src/domain/value-objects/ProjectContext.ts";
-import { RoleFolder } from "../../src/domain/value-objects/RoleFolder.ts";
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/App/configuration/ArchitectureLinterConfiguration.ts";
+import { TestsDiagnosticsLocationPolicy } from "../../src/Domain/Policies/TestArchitecturePolicies.ts";
+import { ArchitectureFile } from "../../src/Domain/ValueObjects/ArchitectureFile.ts";
+import { ArchitectureLayer } from "../../src/Domain/ValueObjects/ArchitectureLayer.ts";
+import { FileClassification } from "../../src/Domain/ValueObjects/FileClassification.ts";
+import { NominalKind } from "../../src/Domain/ValueObjects/NominalKind.ts";
+import { ProjectContext } from "../../src/Domain/ValueObjects/ProjectContext.ts";
+import { RoleFolder } from "../../src/Domain/ValueObjects/RoleFolder.ts";
 
 test("diagnostics location policy uses configured diagnostics subpath", () => {
   const policy = new TestsDiagnosticsLocationPolicy({

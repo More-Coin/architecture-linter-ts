@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/app/configuration/ArchitectureLinterConfiguration.ts";
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/App/configuration/ArchitectureLinterConfiguration.ts";
 import {
   TestsImportOwnershipPolicy,
   TestsLinterHarnessExtractionPolicy,
@@ -9,15 +9,15 @@ import {
   TestsSharedSupportPlacementPolicy,
   TestsTestDoublesOnlySupportPolicy,
   makeTestArchitecturePolicies,
-} from "../../src/domain/policies/TestArchitecturePolicies.ts";
-import { ArchitectureFile } from "../../src/domain/value-objects/ArchitectureFile.ts";
-import type { ArchitectureMethodDeclaration } from "../../src/domain/value-objects/ArchitectureMethodDeclaration.ts";
-import type { ArchitectureNestedNominalDeclaration } from "../../src/domain/value-objects/ArchitectureNestedNominalDeclaration.ts";
-import { ArchitectureLayer } from "../../src/domain/value-objects/ArchitectureLayer.ts";
-import { FileClassification } from "../../src/domain/value-objects/FileClassification.ts";
-import { NominalKind } from "../../src/domain/value-objects/NominalKind.ts";
-import { ProjectContext } from "../../src/domain/value-objects/ProjectContext.ts";
-import { RoleFolder } from "../../src/domain/value-objects/RoleFolder.ts";
+} from "../../src/Domain/Policies/TestArchitecturePolicies.ts";
+import { ArchitectureFile } from "../../src/Domain/ValueObjects/ArchitectureFile.ts";
+import type { ArchitectureMethodDeclaration } from "../../src/Domain/ValueObjects/ArchitectureMethodDeclaration.ts";
+import type { ArchitectureNestedNominalDeclaration } from "../../src/Domain/ValueObjects/ArchitectureNestedNominalDeclaration.ts";
+import { ArchitectureLayer } from "../../src/Domain/ValueObjects/ArchitectureLayer.ts";
+import { FileClassification } from "../../src/Domain/ValueObjects/FileClassification.ts";
+import { NominalKind } from "../../src/Domain/ValueObjects/NominalKind.ts";
+import { ProjectContext } from "../../src/Domain/ValueObjects/ProjectContext.ts";
+import { RoleFolder } from "../../src/Domain/ValueObjects/RoleFolder.ts";
 
 const TEST_CONFIGURATION = {
   ...DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,

@@ -9,13 +9,13 @@ import {
   PresentationErrorsPlacementPolicy,
   PresentationInfrastructureReferencePolicy,
   makePresentationArchitecturePolicies,
-} from "../../src/domain/policies/PresentationArchitecturePolicies.ts";
-import { ArchitectureFile } from "../../src/domain/value-objects/ArchitectureFile.ts";
-import { ArchitectureLayer } from "../../src/domain/value-objects/ArchitectureLayer.ts";
-import { FileClassification } from "../../src/domain/value-objects/FileClassification.ts";
-import { NominalKind } from "../../src/domain/value-objects/NominalKind.ts";
-import { ProjectContext } from "../../src/domain/value-objects/ProjectContext.ts";
-import { RoleFolder } from "../../src/domain/value-objects/RoleFolder.ts";
+} from "../../src/Domain/Policies/PresentationArchitecturePolicies.ts";
+import { ArchitectureFile } from "../../src/Domain/ValueObjects/ArchitectureFile.ts";
+import { ArchitectureLayer } from "../../src/Domain/ValueObjects/ArchitectureLayer.ts";
+import { FileClassification } from "../../src/Domain/ValueObjects/FileClassification.ts";
+import { NominalKind } from "../../src/Domain/ValueObjects/NominalKind.ts";
+import { ProjectContext } from "../../src/Domain/ValueObjects/ProjectContext.ts";
+import { RoleFolder } from "../../src/Domain/ValueObjects/RoleFolder.ts";
 
 test("presentation controller shape flags controller files without a controller type", () => {
   const file = makeFile({

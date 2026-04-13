@@ -9,7 +9,7 @@ import {
   DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
   DefaultArchitecturePolicies,
   lintProject,
-} from "../../src/index.ts";
+} from "../../src/App/index.ts";
 
 const fixtureRoot = path.resolve(
   "tests/fixtures/type-script-lint-project",

@@ -1,13 +1,13 @@
-import type { ArchitectureLinterConfiguration } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
-import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
-import type { ArchitecturePolicyProtocol } from "../protocols/ArchitecturePolicyProtocol.ts";
-import type { ArchitectureDiagnostic } from "../value-objects/ArchitectureDiagnostic.ts";
-import type { ArchitectureFile } from "../value-objects/ArchitectureFile.ts";
-import type { ArchitectureImportOccurrence } from "../value-objects/ArchitectureImportOccurrence.ts";
-import type { ArchitectureMethodDeclaration } from "../value-objects/ArchitectureMethodDeclaration.ts";
-import type { ArchitectureNestedNominalDeclaration } from "../value-objects/ArchitectureNestedNominalDeclaration.ts";
-import type { ArchitectureTopLevelDeclaration } from "../value-objects/ArchitectureTopLevelDeclaration.ts";
-import type { ProjectContext } from "../value-objects/ProjectContext.ts";
+import type { ArchitectureLinterConfiguration } from "../ValueObjects/ArchitectureLinterConfiguration.ts";
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../ValueObjects/ArchitectureLinterConfiguration.ts";
+import type { ArchitecturePolicyProtocol } from "../Protocols/ArchitecturePolicyProtocol.ts";
+import type { ArchitectureDiagnostic } from "../ValueObjects/ArchitectureDiagnostic.ts";
+import type { ArchitectureFile } from "../ValueObjects/ArchitectureFile.ts";
+import type { ArchitectureImportOccurrence } from "../ValueObjects/ArchitectureImportOccurrence.ts";
+import type { ArchitectureMethodDeclaration } from "../ValueObjects/ArchitectureMethodDeclaration.ts";
+import type { ArchitectureNestedNominalDeclaration } from "../ValueObjects/ArchitectureNestedNominalDeclaration.ts";
+import type { ArchitectureTopLevelDeclaration } from "../ValueObjects/ArchitectureTopLevelDeclaration.ts";
+import type { ProjectContext } from "../ValueObjects/ProjectContext.ts";
 
 export class TestsLegacyRootPolicy implements ArchitecturePolicyProtocol {
   static readonly ruleID = "tests.no_active_tests_under_legacy_tests_root";

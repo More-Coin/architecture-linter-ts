@@ -7,13 +7,13 @@ import {
   AppRuntimeShapePolicy,
   CompositionRootInwardReferencePolicy,
   makeAppCompositionPolicies,
-} from "../../src/domain/policies/AppCompositionPolicies.ts";
-import { ProjectContext } from "../../src/domain/value-objects/ProjectContext.ts";
-import { ArchitectureFile } from "../../src/domain/value-objects/ArchitectureFile.ts";
-import { ArchitectureLayer } from "../../src/domain/value-objects/ArchitectureLayer.ts";
-import { FileClassification } from "../../src/domain/value-objects/FileClassification.ts";
-import { NominalKind } from "../../src/domain/value-objects/NominalKind.ts";
-import { RoleFolder } from "../../src/domain/value-objects/RoleFolder.ts";
+} from "../../src/Domain/Policies/AppCompositionPolicies.ts";
+import { ProjectContext } from "../../src/Domain/ValueObjects/ProjectContext.ts";
+import { ArchitectureFile } from "../../src/Domain/ValueObjects/ArchitectureFile.ts";
+import { ArchitectureLayer } from "../../src/Domain/ValueObjects/ArchitectureLayer.ts";
+import { FileClassification } from "../../src/Domain/ValueObjects/FileClassification.ts";
+import { NominalKind } from "../../src/Domain/ValueObjects/NominalKind.ts";
+import { RoleFolder } from "../../src/Domain/ValueObjects/RoleFolder.ts";
 
 test("AppConfigurationShapePolicy flags protocol declarations in App/Configuration", () => {
   const file = makeFile({

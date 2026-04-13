@@ -1,53 +1,21 @@
-import type { ArchitectureLinterStructuredErrorProtocol } from "../../application/contracts/errors/ArchitectureLinterStructuredErrorProtocol.ts";
-import type { StructuredErrorProtocol } from "../../domain/protocols/StructuredErrorProtocol.ts";
+import type { StructuredErrorProtocol } from "../../Domain/Protocols/StructuredErrorProtocol.ts";
 import { ARCHITECTURE_LINTER_USAGE } from "../ArchitectureLinterCLIUsage.ts";
 
-export class ArchitectureLinterPresentationError
-  extends Error
-  implements StructuredErrorProtocol, ArchitectureLinterStructuredErrorProtocol
-{
-  readonly code: string;
-  readonly retryable = false;
-  readonly details?: string;
-
-  private constructor(input: {
-    code: string;
-    message: string;
-    details?: string;
-  }) {
-    super(input.message);
-    this.name = "ArchitectureLinterPresentationError";
-    this.code = input.code;
-    this.details = input.details;
+export type ArchitectureLinterPresentationError = Readonly<
+  StructuredErrorProtocol & {
+    name: "ArchitectureLinterPresentationError";
   }
+>;
 
-  static invalidArguments(): ArchitectureLinterPresentationError {
-    return new ArchitectureLinterPresentationError({
+export const ArchitectureLinterPresentationErrors = {
+  invalidArguments(): ArchitectureLinterPresentationError {
+    return {
+      name: "ArchitectureLinterPresentationError",
       code: "architecture_linter.invalid_arguments",
       message: ARCHITECTURE_LINTER_USAGE,
+      retryable: false,
       details:
         "Provide zero or one root argument plus optional --scope and --config flags. When omitted, the CLI lints ./src.",
-    });
-  }
-
-  static unreadableConfig(
-    path: string,
-  ): ArchitectureLinterPresentationError {
-    return new ArchitectureLinterPresentationError({
-      code: "architecture_linter.unreadable_config",
-      message: "The provided linter config file could not be read.",
-      details: `Config path: ${path}`,
-    });
-  }
-
-  static invalidConfig(
-    path: string,
-    underlyingMessage: string,
-  ): ArchitectureLinterPresentationError {
-    return new ArchitectureLinterPresentationError({
-      code: "architecture_linter.invalid_config",
-      message: "The provided linter config file is invalid.",
-      details: `Config path: ${path}\nDecoder message: ${underlyingMessage}`,
-    });
-  }
-}
+    };
+  },
+};

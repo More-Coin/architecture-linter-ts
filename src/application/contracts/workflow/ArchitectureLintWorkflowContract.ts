@@ -1,4 +1,7 @@
-export interface ArchitectureLintWorkflowContract {
-  readonly rootURL: URL;
-  readonly diagnosticRulePrefix?: string;
-}
+import type { ArchitectureLinterConfiguration } from "../../../Domain/ValueObjects/ArchitectureLinterConfiguration.ts";
+
+export type ArchitectureLintWorkflowContract = Readonly<{
+  rootURL: URL;
+  configuration: ArchitectureLinterConfiguration;
+  diagnosticRulePrefix?: string;
+}>;

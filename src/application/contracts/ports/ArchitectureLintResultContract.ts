@@ -1,7 +1,5 @@
-import type { ArchitectureDiagnostic } from "../../../domain/value-objects/ArchitectureDiagnostic.ts";
+import type { ArchitectureDiagnostic } from "../../../Domain/ValueObjects/ArchitectureDiagnostic.ts";
 
-export interface ArchitectureLintResultContract {
-  readonly diagnostics: readonly ArchitectureDiagnostic[];
-}
-
-export type ArchitectureLintResult = ArchitectureLintResultContract;
+export type ArchitectureLintResultContract = Readonly<{
+  diagnostics: readonly ArchitectureDiagnostic[];
+}>;

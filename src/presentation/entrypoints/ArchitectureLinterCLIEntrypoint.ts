@@ -1,18 +1,15 @@
-import type { ArchitectureLinterConfiguration } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
-import type { ArchitecturePolicyProtocol } from "../../domain/protocols/ArchitecturePolicyProtocol.ts";
+import { ArchitectureLinterService } from "../../Application/services/ArchitectureLinterService.ts";
 import { ArchitectureLinterController } from "../controllers/ArchitectureLinterController.ts";
 import { ArchitectureLinterRenderer } from "../renderers/ArchitectureLinterRenderer.ts";
 
 export class ArchitectureLinterCLIEntrypoint {
   static run(
     arguments_: readonly string[],
-    makePolicies: (
-      configuration: ArchitectureLinterConfiguration,
-    ) => readonly ArchitecturePolicyProtocol[],
+    service: ArchitectureLinterService,
   ): number {
     return new ArchitectureLinterController({
       renderer: new ArchitectureLinterRenderer(),
-      makePolicies,
+      service,
     }).run(arguments_);
   }
 }

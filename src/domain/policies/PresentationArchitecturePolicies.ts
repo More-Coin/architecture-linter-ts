@@ -1,10 +1,10 @@
-import type { ArchitecturePolicyProtocol } from "../protocols/ArchitecturePolicyProtocol.ts";
-import { ArchitectureLayer } from "../value-objects/ArchitectureLayer.ts";
-import type { ArchitectureDiagnostic } from "../value-objects/ArchitectureDiagnostic.ts";
-import type { ArchitectureFile } from "../value-objects/ArchitectureFile.ts";
-import { NominalKind } from "../value-objects/NominalKind.ts";
-import type { ProjectContext } from "../value-objects/ProjectContext.ts";
-import { RoleFolder } from "../value-objects/RoleFolder.ts";
+import type { ArchitecturePolicyProtocol } from "../Protocols/ArchitecturePolicyProtocol.ts";
+import { ArchitectureLayer } from "../ValueObjects/ArchitectureLayer.ts";
+import type { ArchitectureDiagnostic } from "../ValueObjects/ArchitectureDiagnostic.ts";
+import type { ArchitectureFile } from "../ValueObjects/ArchitectureFile.ts";
+import { NominalKind } from "../ValueObjects/NominalKind.ts";
+import type { ProjectContext } from "../ValueObjects/ProjectContext.ts";
+import { RoleFolder } from "../ValueObjects/RoleFolder.ts";
 
 export class PresentationControllerShapePolicy
   implements ArchitecturePolicyProtocol

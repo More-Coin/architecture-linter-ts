@@ -1,21 +1,37 @@
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import type { ArchitectureLintCommandContract } from "../contracts/commands/ArchitectureLintCommandContract.ts";
 import type { ArchitectureLintResultContract } from "../contracts/ports/ArchitectureLintResultContract.ts";
 import type { ArchitectureLintWorkflowContract } from "../contracts/workflow/ArchitectureLintWorkflowContract.ts";
+import { diagnosticRulePrefixForScope } from "../contracts/workflow/ArchitectureLintScope.ts";
+import type { ArchitectureLinterConfigurationPortProtocol } from "../ports/protocols/ArchitectureLinterConfigurationPortProtocol.ts";
 import { LintProjectUseCase } from "../use-cases/LintProjectUseCase.ts";
 
 export class ArchitectureLinterService {
   private readonly lintProjectUseCase: LintProjectUseCase;
+  private readonly configurationPort: ArchitectureLinterConfigurationPortProtocol;
 
-  constructor(lintProjectUseCase: LintProjectUseCase) {
+  constructor(
+    lintProjectUseCase: LintProjectUseCase,
+    configurationPort: ArchitectureLinterConfigurationPortProtocol,
+  ) {
     this.lintProjectUseCase = lintProjectUseCase;
+    this.configurationPort = configurationPort;
   }
 
   execute(
-    workflow: ArchitectureLintWorkflowContract,
+    command: ArchitectureLintCommandContract,
   ): ArchitectureLintResultContract {
-    return this.lint(this.normalizedWorkflow(workflow));
+    const configuration = this.configurationPort.loadConfiguration(command);
+
+    return this.lint(
+      this.normalizedWorkflow({
+        rootURL: command.rootURL,
+        configuration,
+        diagnosticRulePrefix: diagnosticRulePrefixForScope(command.scope),
+      }),
+    );
   }
 
   private normalizedWorkflow(
@@ -25,6 +41,7 @@ export class ArchitectureLinterService {
 
     return {
       rootURL: this.standardizedFileURL(workflow.rootURL),
+      configuration: workflow.configuration,
       ...(diagnosticRulePrefix ? { diagnosticRulePrefix } : {}),
     };
   }
