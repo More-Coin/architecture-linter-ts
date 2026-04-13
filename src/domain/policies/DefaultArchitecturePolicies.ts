@@ -128,7 +128,7 @@ export class DefaultArchitecturePolicies {
     configuration: ArchitectureLinterConfiguration = DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
   ): readonly ArchitecturePolicyProtocol[] {
     return REGISTERED_POLICIES.flatMap((policy) => {
-      if (!this.shouldIncludePolicy(policy.ruleID, configuration)) {
+      if (!DefaultArchitecturePolicies.shouldIncludePolicy(policy.ruleID, configuration)) {
         return [];
       }
 

@@ -149,3 +149,15 @@ test("default policies exclude disabled rule prefixes", () => {
     ),
   );
 });
+
+test("default policies factory works when passed as a detached callback", () => {
+  const makePolicies = DefaultArchitecturePolicies.make;
+  const policies = makePolicies(DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION);
+
+  assert.ok(policies.length > 0);
+  assert.ok(
+    policies.some(
+      (policy) => policy.constructor === ApplicationOuterLayerReferencePolicy,
+    ),
+  );
+});

@@ -13,12 +13,13 @@ export class ArchitectureLinterCommandDTO {
     arguments_: readonly string[],
     currentWorkingDirectory = process.cwd(),
   ) {
+    const defaultRootPath = "./src";
     const userArguments = ArchitectureLinterCommandDTO.userArguments(arguments_);
     if (userArguments.includes("--help") || userArguments.includes("-h")) {
       throw ArchitectureLinterPresentationError.invalidArguments();
     }
 
-    let rootPath = currentWorkingDirectory;
+    let rootPath = defaultRootPath;
     let scope = ArchitectureLintScope.All;
     let configPath: string | undefined;
     let hasSeenScope = false;
@@ -55,7 +56,7 @@ export class ArchitectureLinterCommandDTO {
         }
 
         default: {
-          if (argument.startsWith("--") || rootPath !== currentWorkingDirectory) {
+          if (argument.startsWith("--") || rootPath !== defaultRootPath) {
             throw ArchitectureLinterPresentationError.invalidArguments();
           }
 
