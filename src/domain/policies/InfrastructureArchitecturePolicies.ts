@@ -1,4 +1,8 @@
 import type { ArchitecturePolicyProtocol } from "../Protocols/ArchitecturePolicyProtocol.ts";
+import type {
+  ArchitectureProjectPolicyInput,
+  ArchitectureProjectPolicyProtocol,
+} from "../Protocols/ArchitectureProjectPolicyProtocol.ts";
 import { ArchitectureLayer } from "../ValueObjects/ArchitectureLayer.ts";
 import type { ArchitectureComputedPropertyDeclaration } from "../ValueObjects/ArchitectureComputedPropertyDeclaration.ts";
 import type { ArchitectureDiagnostic } from "../ValueObjects/ArchitectureDiagnostic.ts";
@@ -747,6 +751,48 @@ export class InfrastructureRoleFolderStructurePolicy
         }),
       ),
     ];
+  }
+}
+
+export class InfrastructureEmptyDirectoryPolicy
+  implements ArchitectureProjectPolicyProtocol
+{
+  static readonly ruleID = "infrastructure.empty_directory";
+
+  evaluateProject(
+    input: ArchitectureProjectPolicyInput,
+  ): readonly ArchitectureDiagnostic[] {
+    return input.emptyDirectoryPaths
+      .filter((directoryPath) =>
+        isInfrastructureDirectoryPath(directoryPath, input.configuration),
+      )
+      .map((directoryPath) => ({
+        ruleID: InfrastructureEmptyDirectoryPolicy.ruleID,
+        path: directoryPath,
+        line: 1,
+        column: 1,
+        message: infrastructureStructuredRemediationMessage({
+          summary:
+            "Empty directories should not be left behind under Infrastructure because they hide whether a role was actually removed, moved, or only partially decomposed.",
+          categories: [
+            "leftover unsupported role folder after files were redistributed into canonical infrastructure roles",
+            "empty canonical role folder kept after its owned files were moved elsewhere",
+            "temporary decomposition folder committed after a refactor finished",
+            "placeholder infrastructure container kept without restoring the files or child roles it is supposed to own",
+          ],
+          signs: [
+            "the directory exists under Infrastructure",
+            "the directory has no visible child files or subdirectories",
+            "the linter cannot assign any infrastructure ownership because no remaining contents exist inside the folder",
+          ],
+          architecturalNote:
+            "Infrastructure folders are only meaningful when they visibly own adapter code, translation shapes, decision helpers, errors, or canonical child roles. An empty folder carries no architectural responsibility, so leaving it behind obscures whether the refactor is complete and whether the intended role still exists at all.",
+          destination:
+            "delete the empty Infrastructure directory if it no longer owns anything, or restore the correctly owned files and canonical child structure if the directory is still meant to exist as a real Infrastructure role or container.",
+          decomposition:
+            "first decide whether the empty folder still represents a real Infrastructure responsibility; if it does not, remove it entirely; if it does, restore the concrete files or canonical child folders it should own, then verify each restored file belongs in Repositories, Gateways, PortAdapters, Evaluators, Translation/Models, Translation/DTOs, or Errors and rerun the linter so the normal role-specific rules validate the rebuilt structure.",
+        }),
+      }));
   }
 }
 
@@ -1855,6 +1901,25 @@ function invalidInfrastructureRoleFolder(file: ArchitectureFile): string | null 
   )
     ? null
     : candidate;
+}
+
+function isInfrastructureDirectoryPath(
+  directoryPath: string,
+  configuration: {
+    readonly layerDirectoryNames: {
+      readonly infrastructure: string;
+    };
+  },
+): boolean {
+  const [topLevelEntry] = directoryPath.split("/");
+  if (!topLevelEntry) {
+    return false;
+  }
+
+  return (
+    normalizedInfrastructureSegment(topLevelEntry) ===
+    normalizedInfrastructureSegment(configuration.layerDirectoryNames.infrastructure)
+  );
 }
 
 function normalizedInfrastructureSegment(value: string): string {

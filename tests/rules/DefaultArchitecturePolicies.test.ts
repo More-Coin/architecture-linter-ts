@@ -6,6 +6,8 @@ import {
   ApplicationOuterLayerReferencePolicy,
 } from "../../src/Domain/Policies/ApplicationArchitecturePolicies.ts";
 import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/App/configuration/ArchitectureLinterConfiguration.ts";
+import { InfrastructureEmptyDirectoryPolicy } from "../../src/Domain/Policies/InfrastructureArchitecturePolicies.ts";
+import { SourceRootEmptyDirectoryPolicy } from "../../src/Domain/Policies/SourceRootArchitecturePolicies.ts";
 
 test("default policies include the full currently ported registry", () => {
   const policies = DefaultArchitecturePolicies.make();
@@ -161,6 +163,23 @@ test("default policies factory works when passed as a detached callback", () => 
   assert.ok(
     policies.some(
       (policy) => policy.constructor === ApplicationOuterLayerReferencePolicy,
+    ),
+  );
+});
+
+test("default project policies include the empty directory policy", () => {
+  const policies = DefaultArchitecturePolicies.makeProjectPolicies(
+    DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+  );
+
+  assert.ok(
+    policies.some(
+      (policy) => policy.constructor === SourceRootEmptyDirectoryPolicy,
+    ),
+  );
+  assert.ok(
+    policies.some(
+      (policy) => policy.constructor === InfrastructureEmptyDirectoryPolicy,
     ),
   );
 });

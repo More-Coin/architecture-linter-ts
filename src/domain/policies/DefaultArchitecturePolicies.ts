@@ -1,5 +1,6 @@
 import type { ArchitectureLinterConfiguration } from "../ValueObjects/ArchitectureLinterConfiguration.ts";
 import {
+  SourceRootEmptyDirectoryPolicy,
   SourceRootLayoutPolicy,
 } from "./SourceRootArchitecturePolicies.ts";
 import {
@@ -52,6 +53,7 @@ import {
 import {
   InfrastructureApplicationContractBehaviorAttachmentPolicy,
   InfrastructureCrossLayerProtocolConformancePolicy,
+  InfrastructureEmptyDirectoryPolicy,
   InfrastructureErrorsPlacementPolicy,
   InfrastructureErrorsShapePolicy,
   InfrastructureEvaluatorsNoExecutionOrchestrationSurfacePolicy,
@@ -119,6 +121,7 @@ import {
   TestsTestDoublesOnlySupportPolicy,
 } from "./TestArchitecturePolicies.ts";
 import type { ArchitecturePolicyProtocol } from "../Protocols/ArchitecturePolicyProtocol.ts";
+import type { ArchitectureProjectPolicyProtocol } from "../Protocols/ArchitectureProjectPolicyProtocol.ts";
 import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../ValueObjects/ArchitectureLinterConfiguration.ts";
 
 type RegisteredArchitecturePolicy = Readonly<{
@@ -128,11 +131,30 @@ type RegisteredArchitecturePolicy = Readonly<{
   ) => ArchitecturePolicyProtocol;
 }>;
 
+type RegisteredProjectArchitecturePolicy = Readonly<{
+  readonly ruleID: string;
+  readonly make: (
+    configuration: ArchitectureLinterConfiguration,
+  ) => ArchitectureProjectPolicyProtocol;
+}>;
+
 export class DefaultArchitecturePolicies {
   static make(
     configuration: ArchitectureLinterConfiguration = DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
   ): readonly ArchitecturePolicyProtocol[] {
     return REGISTERED_POLICIES.flatMap((policy) => {
+      if (!DefaultArchitecturePolicies.shouldIncludePolicy(policy.ruleID, configuration)) {
+        return [];
+      }
+
+      return [policy.make(configuration)];
+    });
+  }
+
+  static makeProjectPolicies(
+    configuration: ArchitectureLinterConfiguration = DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+  ): readonly ArchitectureProjectPolicyProtocol[] {
+    return REGISTERED_PROJECT_POLICIES.flatMap((policy) => {
       if (!DefaultArchitecturePolicies.shouldIncludePolicy(policy.ruleID, configuration)) {
         return [];
       }
@@ -590,5 +612,16 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
     ruleID: TestsLinterHarnessExtractionPolicy.ruleID,
     make: (configuration) =>
       new TestsLinterHarnessExtractionPolicy(configuration),
+  },
+];
+
+const REGISTERED_PROJECT_POLICIES: readonly RegisteredProjectArchitecturePolicy[] = [
+  {
+    ruleID: SourceRootEmptyDirectoryPolicy.ruleID,
+    make: () => new SourceRootEmptyDirectoryPolicy(),
+  },
+  {
+    ruleID: InfrastructureEmptyDirectoryPolicy.ruleID,
+    make: () => new InfrastructureEmptyDirectoryPolicy(),
   },
 ];

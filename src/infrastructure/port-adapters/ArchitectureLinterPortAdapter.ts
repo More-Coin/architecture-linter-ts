@@ -6,6 +6,7 @@ import type { SourceFileDiscoveryPortProtocol } from "../../Application/ports/pr
 import { ArchitectureDiagnosticOrderingPolicy } from "../../Domain/Policies/ArchitectureDiagnosticOrderingPolicy.ts";
 import { DefaultArchitecturePolicies } from "../../Domain/Policies/DefaultArchitecturePolicies.ts";
 import type { ArchitecturePolicyProtocol } from "../../Domain/Protocols/ArchitecturePolicyProtocol.ts";
+import type { ArchitectureProjectPolicyProtocol } from "../../Domain/Protocols/ArchitectureProjectPolicyProtocol.ts";
 import { SourceFileDiscoveryGateway } from "../gateways/SourceFileDiscoveryGateway.ts";
 import { LinterProjectContextModel } from "../translation/models/LinterProjectContextModel.ts";
 import { TypeScriptProjectPortAdapter } from "./TypeScriptProjectPortAdapter.ts";
@@ -14,17 +15,20 @@ export class ArchitectureLinterPortAdapter
   implements ArchitectureLintPortProtocol
 {
   private readonly policies: readonly ArchitecturePolicyProtocol[];
+  private readonly projectPolicies: readonly ArchitectureProjectPolicyProtocol[];
   private readonly sourceFileDiscovery?: SourceFileDiscoveryPortProtocol;
   private readonly projectContextModel: LinterProjectContextModel;
   private readonly projectAnalyzer?: ProjectAnalysisPortProtocol;
 
   constructor(input: {
     policies?: readonly ArchitecturePolicyProtocol[];
+    projectPolicies?: readonly ArchitectureProjectPolicyProtocol[];
     sourceFileDiscovery?: SourceFileDiscoveryPortProtocol;
     projectContextModel?: LinterProjectContextModel;
     projectAnalyzer?: ProjectAnalysisPortProtocol;
   } = {}) {
     this.policies = input.policies ?? [];
+    this.projectPolicies = input.projectPolicies ?? [];
     this.sourceFileDiscovery = input.sourceFileDiscovery;
     this.projectContextModel =
       input.projectContextModel ?? new LinterProjectContextModel();
@@ -43,14 +47,31 @@ export class ArchitectureLinterPortAdapter
       this.policies.length > 0
         ? this.policies
         : DefaultArchitecturePolicies.make(workflow.configuration);
+    const projectPolicies =
+      this.projectPolicies.length > 0
+        ? this.projectPolicies
+        : DefaultArchitecturePolicies.makeProjectPolicies(workflow.configuration);
     const fileURLs = sourceFileDiscovery.discoverSourceFiles(workflow.rootURL);
+    const emptyDirectoryPaths =
+      sourceFileDiscovery.discoverEmptyDirectories(workflow.rootURL);
     const files = projectAnalyzer.analyzeProject(workflow.rootURL, fileURLs);
     const context = this.projectContextModel.toDomain(files);
+    const projectDiagnostics = projectPolicies.flatMap((policy) =>
+      policy.evaluateProject({
+        rootURL: workflow.rootURL,
+        configuration: workflow.configuration,
+        sourceFileURLs: fileURLs,
+        emptyDirectoryPaths,
+      }),
+    );
     const diagnostics = files.flatMap((file) =>
       policies.flatMap((policy) => [...policy.evaluate(file, context)]),
     );
     const orderedDiagnostics =
-      new ArchitectureDiagnosticOrderingPolicy().ordered(diagnostics);
+      new ArchitectureDiagnosticOrderingPolicy().ordered([
+        ...projectDiagnostics,
+        ...diagnostics,
+      ]);
 
     return {
       diagnostics: orderedDiagnostics,

@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-
 import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/App/configuration/ArchitectureLinterConfiguration.ts";
-import { SourceRootLayoutPolicy } from "../../src/Domain/Policies/SourceRootArchitecturePolicies.ts";
+import {
+  SourceRootEmptyDirectoryPolicy,
+  SourceRootLayoutPolicy,
+} from "../../src/Domain/Policies/SourceRootArchitecturePolicies.ts";
 import { ArchitectureFile } from "../../src/Domain/ValueObjects/ArchitectureFile.ts";
 import { ArchitectureLayer } from "../../src/Domain/ValueObjects/ArchitectureLayer.ts";
 import { FileClassification } from "../../src/Domain/ValueObjects/FileClassification.ts";
@@ -59,6 +61,32 @@ test("source root layout policy rejects unknown top-level entries", () => {
 
   assert.equal(diagnostics.length, 1);
   assert.match(diagnostics[0]?.message ?? "", /Allowed top-level entries are Alpha, Beta/);
+});
+
+test("source root empty directory policy flags empty directories under the lint root", () => {
+  const diagnostics = new SourceRootEmptyDirectoryPolicy().evaluateProject({
+    rootURL: new URL("file:///tmp/example/"),
+    configuration: DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+    sourceFileURLs: [],
+    emptyDirectoryPaths: ["Documentation/Drafts"],
+  });
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.ruleID, SourceRootEmptyDirectoryPolicy.ruleID);
+  assert.equal(diagnostics[0]?.path, "Documentation/Drafts");
+  assert.match(diagnostics[0]?.message ?? "", /Empty directories should not be left behind/);
+  assert.match(diagnostics[0]?.message ?? "", /delete the empty directory/);
+});
+
+test("source root empty directory policy defers Infrastructure directories to Infrastructure-specific rules", () => {
+  const diagnostics = new SourceRootEmptyDirectoryPolicy().evaluateProject({
+    rootURL: new URL("file:///tmp/example/"),
+    configuration: DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+    sourceFileURLs: [],
+    emptyDirectoryPaths: ["Infrastructure/Analyzers"],
+  });
+
+  assert.equal(diagnostics.length, 0);
 });
 
 function makeFile(repoRelativePath: string): ArchitectureFile {

@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/App/configuration/ArchitectureLinterConfiguration.ts";
 
 import {
+  InfrastructureEmptyDirectoryPolicy,
   InfrastructureApplicationContractBehaviorAttachmentPolicy,
   InfrastructureCrossLayerProtocolConformancePolicy,
   InfrastructureErrorsPlacementPolicy,
@@ -155,6 +157,27 @@ test("infrastructure role folder structure flags unknown first-level infrastruct
   assert.match(diagnostics[0]?.message ?? "", /Repositories/);
   assert.match(diagnostics[0]?.message ?? "", /Gateways/);
   assert.match(diagnostics[0]?.message ?? "", /Translation\/Models/);
+});
+
+test("infrastructure empty directory policy flags empty directories under Infrastructure", () => {
+  const diagnostics = new InfrastructureEmptyDirectoryPolicy().evaluateProject({
+    rootURL: new URL("file:///tmp/example/"),
+    configuration: DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+    sourceFileURLs: [],
+    emptyDirectoryPaths: ["Infrastructure/Analyzers"],
+  });
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.ruleID, InfrastructureEmptyDirectoryPolicy.ruleID);
+  assert.equal(diagnostics[0]?.path, "Infrastructure/Analyzers");
+  assert.match(
+    diagnostics[0]?.message ?? "",
+    /Empty directories should not be left behind under Infrastructure/,
+  );
+  assert.match(
+    diagnostics[0]?.message ?? "",
+    /Repositories, Gateways, PortAdapters, Evaluators, Translation\/Models, Translation\/DTOs, or Errors/,
+  );
 });
 
 test("infrastructure errors shape requires StructuredErrorProtocol and full member surface", () => {

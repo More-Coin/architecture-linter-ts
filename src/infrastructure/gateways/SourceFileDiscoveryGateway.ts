@@ -25,6 +25,28 @@ export class SourceFileDiscoveryGateway
   }
 
   discoverSourceFiles(in_: URL): readonly URL[] {
+    const rootPath = this.validatedRootPath(in_);
+
+    const results: URL[] = [];
+    this.walk(in_, in_, results);
+
+    return results.sort((lhs, rhs) =>
+      repoRelativePathFromURLs(lhs, in_).localeCompare(
+        repoRelativePathFromURLs(rhs, in_),
+      ),
+    );
+  }
+
+  discoverEmptyDirectories(in_: URL): readonly string[] {
+    const rootPath = this.validatedRootPath(in_);
+    const results: string[] = [];
+
+    this.collectEmptyDirectories(in_, in_, results);
+
+    return results.sort((lhs, rhs) => lhs.localeCompare(rhs));
+  }
+
+  private validatedRootPath(in_: URL): string {
     const rootPath = fileURLToPath(in_);
 
     if (!fs.existsSync(rootPath)) {
@@ -42,14 +64,7 @@ export class SourceFileDiscoveryGateway
       throw ArchitectureLinterInfrastructureError.invalidRootDirectory(rootPath);
     }
 
-    const results: URL[] = [];
-    this.walk(in_, in_, results);
-
-    return results.sort((lhs, rhs) =>
-      repoRelativePathFromURLs(lhs, in_).localeCompare(
-        repoRelativePathFromURLs(rhs, in_),
-      ),
-    );
+    return rootPath;
   }
 
   private walk(rootURL: URL, currentURL: URL, results: URL[]): void {
@@ -82,6 +97,40 @@ export class SourceFileDiscoveryGateway
 
       results.push(nextURL);
     }
+  }
+
+  private collectEmptyDirectories(
+    rootURL: URL,
+    currentURL: URL,
+    results: string[],
+  ): void {
+    const currentPath = fileURLToPath(currentURL);
+
+    for (const entry of fs.readdirSync(currentPath, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) {
+        continue;
+      }
+
+      const nextPath = `${currentPath}/${entry.name}`;
+      const nextURL = pathToFileURL(nextPath);
+      const repoRelativePath = repoRelativePathFromURLs(nextURL, rootURL);
+
+      if (this.shouldSkip(repoRelativePath)) {
+        continue;
+      }
+
+      this.collectEmptyDirectories(rootURL, nextURL, results);
+
+      if (this.hasVisibleEntries(nextPath)) {
+        continue;
+      }
+
+      results.push(repoRelativePath);
+    }
+  }
+
+  private hasVisibleEntries(directoryPath: string): boolean {
+    return fs.readdirSync(directoryPath).some((entry) => !entry.startsWith("."));
   }
 
   private shouldSkip(repoRelativePath: string): boolean {
