@@ -1,0 +1,15 @@
+{
+  "name": "architecture-linter-ts",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "node --experimental-transform-types ./src/index.ts",
+    "start": "node --experimental-transform-types ./src/app/main.ts",
+    "test": "node --experimental-transform-types --test ./tests/rules/*.test.ts"
+  },
+  "dependencies": {
+    "ts-morph": "^26.0.0",
+    "typescript": "^5.8.3"
+  }
+}
