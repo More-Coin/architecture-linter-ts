@@ -1,33 +1,26 @@
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   Node,
-  Project,
   Scope,
-  ScriptTarget,
   SyntaxKind,
-  ts,
   type ClassDeclaration,
   type Expression,
   type GetAccessorDeclaration,
-  type Identifier,
   type InterfaceDeclaration,
   type MethodDeclaration,
   type MethodSignature,
   type NewExpression,
-  type ParameterDeclaration,
   type PropertyDeclaration,
   type SourceFile,
 } from "ts-morph";
 
-import type { ArchitectureLinterConfiguration } from "../../Domain/ValueObjects/ArchitectureLinterConfiguration.ts";
-import { ArchitecturePathClassificationPolicy } from "../../Domain/Policies/ArchitecturePathClassificationPolicy.ts";
-import { ArchitectureFile } from "../../Domain/ValueObjects/ArchitectureFile.ts";
-import { NominalKind } from "../../Domain/ValueObjects/NominalKind.ts";
-import type { SourceCoordinate } from "../../Domain/ValueObjects/SourceCoordinate.ts";
-import { LinterRepoRelativePathModel } from "../translation/LinterRepoRelativePathModel.ts";
+import { ArchitecturePathClassificationPolicy } from "../../../Domain/Policies/ArchitecturePathClassificationPolicy.ts";
+import { ArchitectureFile } from "../../../Domain/ValueObjects/ArchitectureFile.ts";
+import type { ArchitectureLinterConfiguration } from "../../../Domain/ValueObjects/ArchitectureLinterConfiguration.ts";
+import { NominalKind } from "../../../Domain/ValueObjects/NominalKind.ts";
+import type { SourceCoordinate } from "../../../Domain/ValueObjects/SourceCoordinate.ts";
 
 const BUILTIN_TYPE_NAMES = new Set([
   "Array",
@@ -65,59 +58,15 @@ const TYPE_KEYWORDS = new Set([
   "extends",
 ]);
 
-export class TypeScriptProjectAnalyzer {
-  private readonly repoRelativePathModel = new LinterRepoRelativePathModel();
+export class TypeScriptSourceFileModel {
   private readonly classifier: ArchitecturePathClassificationPolicy;
 
-  constructor(
-    private readonly configuration: ArchitectureLinterConfiguration,
-  ) {
+  constructor(configuration: ArchitectureLinterConfiguration) {
     this.classifier = new ArchitecturePathClassificationPolicy(configuration);
   }
 
-  analyzeProject(
-    rootURL: URL,
-    fileURLs: readonly URL[],
-  ): readonly ArchitectureFile[] {
-    const project = this.makeProject(rootURL);
-    const filePaths = fileURLs.map((fileURL) => fileURLToPath(fileURL));
-
-    project.addSourceFilesAtPaths(filePaths);
-    project.resolveSourceFileDependencies();
-
-    return filePaths.flatMap((filePath) => {
-      const sourceFile = project.getSourceFile(filePath);
-      if (!sourceFile) {
-        return [];
-      }
-
-      return [this.toArchitectureFile(sourceFile, rootURL)];
-    });
-  }
-
-  private makeProject(rootURL: URL): Project {
-    const rootPath = fileURLToPath(rootURL);
-    const tsConfigPath = path.join(rootPath, this.configuration.tsConfigFilePath);
-
-    if (fs.existsSync(tsConfigPath)) {
-      return new Project({
-        tsConfigFilePath: tsConfigPath,
-        skipAddingFilesFromTsConfig: true,
-      });
-    }
-
-    return new Project({
-      compilerOptions: {
-        target: ScriptTarget.ES2022,
-        module: ts.ModuleKind.NodeNext,
-        moduleResolution: ts.ModuleResolutionKind.NodeNext,
-        allowJs: false,
-      },
-    });
-  }
-
-  private toArchitectureFile(sourceFile: SourceFile, rootURL: URL): ArchitectureFile {
-    const repoRelativePath = this.repoRelativePathModel.fromURLs(
+  toDomain(sourceFile: SourceFile, rootURL: URL): ArchitectureFile {
+    const repoRelativePath = repoRelativePathFromURLs(
       pathToFileURL(sourceFile.getFilePath()),
       rootURL,
     );
@@ -145,24 +94,24 @@ export class TypeScriptProjectAnalyzer {
       classification,
       imports: sourceFile.getImportDeclarations().map((declaration) => ({
         moduleName: declaration.getModuleSpecifierValue(),
-        coordinate: this.coordinateFor(declaration.getModuleSpecifier()),
+        coordinate: coordinateFor(declaration.getModuleSpecifier()),
       })),
       functionTypeOccurrences: sourceFile
         .getDescendantsOfKind(SyntaxKind.FunctionType)
         .map((node) => ({
-          coordinate: this.coordinateFor(node),
+          coordinate: coordinateFor(node),
         })),
       identifierOccurrences: sourceFile
         .getDescendantsOfKind(SyntaxKind.Identifier)
         .map((identifier) => ({
           name: identifier.getText(),
-          coordinate: this.coordinateFor(identifier),
+          coordinate: coordinateFor(identifier),
         })),
       stringLiteralOccurrences: sourceFile
         .getDescendantsOfKind(SyntaxKind.StringLiteral)
         .map((literal) => ({
           value: literal.getLiteralValue(),
-          coordinate: this.coordinateFor(literal),
+          coordinate: coordinateFor(literal),
         })),
       typedMemberOccurrences,
       memberCallOccurrences,
@@ -191,7 +140,7 @@ export class TypeScriptProjectAnalyzer {
             kind: NominalKind.Class,
             inheritedTypeNames: this.extractHeritageTypeNames(statement),
             memberNames: this.memberNamesForClass(statement),
-            coordinate: this.coordinateFor(statement.getNameNode() ?? statement),
+            coordinate: coordinateFor(statement.getNameNode() ?? statement),
           },
         ];
       }
@@ -203,7 +152,7 @@ export class TypeScriptProjectAnalyzer {
             kind: NominalKind.Protocol,
             inheritedTypeNames: this.extractHeritageTypeNames(statement),
             memberNames: this.memberNamesForInterface(statement),
-            coordinate: this.coordinateFor(statement.getNameNode()),
+            coordinate: coordinateFor(statement.getNameNode()),
           },
         ];
       }
@@ -215,7 +164,7 @@ export class TypeScriptProjectAnalyzer {
             kind: NominalKind.Enum,
             inheritedTypeNames: [],
             memberNames: statement.getMembers().map((member) => member.getName()),
-            coordinate: this.coordinateFor(statement.getNameNode()),
+            coordinate: coordinateFor(statement.getNameNode()),
           },
         ];
       }
@@ -227,7 +176,7 @@ export class TypeScriptProjectAnalyzer {
             kind: NominalKind.Struct,
             inheritedTypeNames: [],
             memberNames: [],
-            coordinate: this.coordinateFor(statement.getNameNode()),
+            coordinate: coordinateFor(statement.getNameNode()),
           },
         ];
       }
@@ -258,7 +207,7 @@ export class TypeScriptProjectAnalyzer {
         parameterTypeNames: constructorDeclaration
           .getParameters()
           .flatMap((parameter) => this.extractTypeNamesFromNode(parameter.getTypeNode())),
-        coordinate: this.coordinateFor(constructorDeclaration),
+        coordinate: coordinateFor(constructorDeclaration),
       })),
     );
   }
@@ -291,7 +240,7 @@ export class TypeScriptProjectAnalyzer {
                 name: parameter.getName(),
                 typeNames: this.extractTypeNamesFromNode(parameter.getTypeNode()),
                 isStatic: false,
-                coordinate: this.coordinateFor(parameter.getNameNode()),
+                coordinate: coordinateFor(parameter.getNameNode()),
               },
             ];
           }),
@@ -318,22 +267,22 @@ export class TypeScriptProjectAnalyzer {
 
     for (const node of sourceFile.getDescendants()) {
       if (Node.isTypeReference(node)) {
-        pushNames(node.getText(), this.coordinateFor(node));
+        pushNames(node.getText(), coordinateFor(node));
         continue;
       }
 
       if (Node.isExpressionWithTypeArguments(node)) {
-        pushNames(node.getText(), this.coordinateFor(node));
+        pushNames(node.getText(), coordinateFor(node));
         continue;
       }
 
       if (Node.isHeritageClause(node)) {
-        pushNames(node.getText(), this.coordinateFor(node));
+        pushNames(node.getText(), coordinateFor(node));
         continue;
       }
 
       if (Node.isNewExpression(node)) {
-        pushNames(node.getExpression().getText(), this.coordinateFor(node));
+        pushNames(node.getExpression().getText(), coordinateFor(node));
       }
     }
 
@@ -394,14 +343,14 @@ export class TypeScriptProjectAnalyzer {
           memberCallOccurrences.push({
             baseName: occurrence.baseName,
             memberName: occurrence.memberName,
-            coordinate: this.coordinateFor(callExpression),
+          coordinate: coordinateFor(callExpression),
           });
           operationalUseOccurrences.push({
             enclosingTypeName: typeName,
             enclosingMethodName: method.getName(),
             baseName: occurrence.baseName,
             memberName: occurrence.memberName,
-            coordinate: this.coordinateFor(callExpression),
+            coordinate: coordinateFor(callExpression),
           });
         }
 
@@ -418,7 +367,7 @@ export class TypeScriptProjectAnalyzer {
             enclosingMethodName: method.getName(),
             baseName: occurrence.baseName,
             memberName: occurrence.memberName,
-            coordinate: this.coordinateFor(newExpression),
+            coordinate: coordinateFor(newExpression),
           });
         }
       }
@@ -584,7 +533,7 @@ export class TypeScriptProjectAnalyzer {
       returnTypeDescription: returnTypeText,
       returnTypeNames: this.extractTypeNamesFromText(returnTypeText),
       returnsVoidLike: this.isVoidLikeType(returnTypeText),
-      coordinate: this.coordinateFor(declaration.getNameNode()),
+      coordinate: coordinateFor(declaration.getNameNode()),
     };
   }
 
@@ -608,7 +557,7 @@ export class TypeScriptProjectAnalyzer {
       returnTypeDescription: returnTypeText,
       returnTypeNames: this.extractTypeNamesFromText(returnTypeText),
       returnsVoidLike: this.isVoidLikeType(returnTypeText),
-      coordinate: this.coordinateFor(declaration.getNameNode()),
+      coordinate: coordinateFor(declaration.getNameNode()),
     };
   }
 
@@ -626,7 +575,7 @@ export class TypeScriptProjectAnalyzer {
       typeDescription: returnTypeText,
       typeNames: this.extractTypeNamesFromText(returnTypeText),
       isStatic: declaration.isStatic(),
-      coordinate: this.coordinateFor(declaration.getNameNode()),
+      coordinate: coordinateFor(declaration.getNameNode()),
     };
   }
 
@@ -639,7 +588,7 @@ export class TypeScriptProjectAnalyzer {
       name: declaration.getName(),
       typeNames: this.extractTypeNamesFromNode(declaration.getTypeNode()),
       isStatic: declaration.isStatic(),
-      coordinate: this.coordinateFor(declaration.getNameNode()),
+      coordinate: coordinateFor(declaration.getNameNode()),
     };
   }
 
@@ -729,7 +678,20 @@ export class TypeScriptProjectAnalyzer {
     );
   }
 
-  private coordinateFor(node: Node): SourceCoordinate {
-    return node.getSourceFile().getLineAndColumnAtPos(node.getStart());
+}
+
+function repoRelativePathFromURLs(fileURL: URL, rootURL: URL): string {
+  const rootPath = path.normalize(fileURLToPath(rootURL));
+  const filePath = path.normalize(fileURLToPath(fileURL));
+  const relativePath = path.relative(rootPath, filePath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    return path.basename(filePath);
   }
+
+  return relativePath.split(path.sep).join("/");
+}
+
+function coordinateFor(node: Node): SourceCoordinate {
+  return node.getSourceFile().getLineAndColumnAtPos(node.getStart());
 }

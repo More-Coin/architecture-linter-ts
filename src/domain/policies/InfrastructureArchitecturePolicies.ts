@@ -708,6 +708,90 @@ export class InfrastructureEvaluatorsNoTranslationSurfacePolicy
   }
 }
 
+export class InfrastructureRoleFolderStructurePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "infrastructure.role_folder_structure";
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    const invalidRoleFolder = invalidInfrastructureRoleFolder(file);
+    if (!invalidRoleFolder) {
+      return [];
+    }
+
+    return [
+      file.diagnostic(
+        InfrastructureRoleFolderStructurePolicy.ruleID,
+        infrastructureStructuredRemediationMessage({
+          summary: `Infrastructure contains unsupported first-level role folder '${invalidRoleFolder}', but Infrastructure should only contain canonical adapter and support roles.`,
+          categories: [
+            "arbitrary technical bucket introduced instead of a canonical infrastructure role",
+            "mixed directory containing files that should be split across gateways, port adapters, translation, evaluators, or errors",
+            "implementation detail folder created around tooling or mechanics rather than architectural responsibility",
+            "misnamed directory that duplicates an existing infrastructure role under different terminology",
+          ],
+          signs: [
+            "file path includes Infrastructure/<UnknownDirectory>/...",
+            "the first-level directory under Infrastructure is not one of Repositories, Gateways, PortAdapters, Evaluators, Translation, or Errors",
+            "the file is classified as Infrastructure but not as a canonical infrastructure role folder",
+          ],
+          architecturalNote:
+            "Infrastructure is organized around explicit role folders so runtime execution, seam adapters, translation, technical decision logic, and error definitions each remain visible to the architecture. Arbitrary first-level folders hide responsibility, mix unrelated work, and bypass the role-specific linter rules that are meant to govern the files after they are placed correctly.",
+          destination:
+            "split the contents of the unsupported folder into the canonical Infrastructure roles: Repositories for concrete data-access adapters, Gateways for live boundary execution, PortAdapters for seam-backed integration adapters, Evaluators for technical decision logic, Translation/Models for intermediary shaping, Translation/DTOs for final boundary-facing carriers or DTO-side translation, and Errors for concrete infrastructure error types.",
+          decomposition:
+            "inspect each file in the unsupported folder by responsibility rather than by its current name; move runtime boundary execution to Gateways or Repositories, move seam-backed adapter implementations to PortAdapters, move technical decision-only logic to Evaluators, move intermediary normalization or parsing shapes to Translation/Models, move final boundary-facing carriers or DTO-side translators to Translation/DTOs, and move structured infrastructure error types to Errors; then rename files and primary types so they match the conventions of the destination role and rerun the linter so the role-specific infrastructure rules can validate the result.",
+        }),
+      ),
+    ];
+  }
+}
+
+export class InfrastructureTranslationStructurePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "infrastructure.translation.structure";
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!isLooseInfrastructureTranslationFile(file)) {
+      return [];
+    }
+
+    return [
+      file.diagnostic(
+        InfrastructureTranslationStructurePolicy.ruleID,
+        infrastructureStructuredRemediationMessage({
+          summary:
+            "Infrastructure/Translation should act as a role container only, but this file lives outside the canonical Models or DTOs subdirectories.",
+          categories: [
+            "uncategorized translation helper placed at the translation root",
+            "intermediary shaping model left outside Infrastructure/Translation/Models",
+            "final boundary-facing DTO carrier or translator left outside Infrastructure/Translation/DTOs",
+            "translation barrel or convenience export file placed where concrete translation roles are expected instead",
+          ],
+          signs: [
+            "file path includes Infrastructure/Translation",
+            "file path does not continue through Models or DTOs",
+            "the file cannot be classified as either an infrastructure translation model or translation DTO role",
+          ],
+          architecturalNote:
+            "Infrastructure/Translation is a role container, not a concrete role. Concrete translation work must be classified as either intermediary shaping in Infrastructure/Translation/Models or final boundary-facing carrier and DTO-side translation work in Infrastructure/Translation/DTOs. Leaving files loose under Infrastructure/Translation hides that ownership boundary and prevents role-specific translation rules from applying consistently across projects.",
+          destination:
+            "move the file into Infrastructure/Translation/Models or Infrastructure/Translation/DTOs, or move it out of Infrastructure/Translation if it is actually a gateway, evaluator, or port-adapter concern.",
+          decomposition:
+            "inspect whether the file performs intermediary normalization, parsing, or request-definition shaping versus final boundary-facing DTO or carrier shaping; relocate the file to Models for intermediary shaping, relocate it to DTOs for final boundary-facing translation, or move it to the infrastructure role that truly owns the behavior; then rerun the linter to confirm the file is classified under a canonical translation role.",
+        }),
+      ),
+    ];
+  }
+}
+
 export class InfrastructureTranslationShapePolicy
   implements ArchitecturePolicyProtocol
 {
@@ -1613,6 +1697,8 @@ export function makeInfrastructureArchitecturePolicies(): readonly ArchitectureP
     new InfrastructureEvaluatorsShapePolicy(),
     new InfrastructureEvaluatorsNoExecutionOrchestrationSurfacePolicy(),
     new InfrastructureEvaluatorsNoTranslationSurfacePolicy(),
+    new InfrastructureRoleFolderStructurePolicy(),
+    new InfrastructureTranslationStructurePolicy(),
     new InfrastructureTranslationShapePolicy(),
     new InfrastructureTranslationModelsIntermediaryShapingSurfacePolicy(),
     new InfrastructureTranslationModelsNoFinalTransportProviderShapeSurfacePolicy(),
@@ -1705,6 +1791,74 @@ function infrastructureRemediationMessage(
   destination: string,
 ): string {
   return `${summary} ${destination}`;
+}
+
+function infrastructureStructuredRemediationMessage(input: {
+  readonly summary: string;
+  readonly categories: readonly string[];
+  readonly signs: readonly string[];
+  readonly architecturalNote: string;
+  readonly destination: string;
+  readonly decomposition: string;
+}): string {
+  return `${input.summary} Likely categories: ${input.categories.join("; ")}; signs: ${input.signs.join("; ")}; architectural note: ${input.architecturalNote}; destination: ${input.destination}; explicit decomposition guidance: ${input.decomposition}`;
+}
+
+function isLooseInfrastructureTranslationFile(file: ArchitectureFile): boolean {
+  if (
+    file.classification.layer !== ArchitectureLayer.Infrastructure ||
+    file.classification.isInfrastructureTranslationFile
+  ) {
+    return false;
+  }
+
+  const pathComponents = file.classification.pathComponents.map((component) =>
+    normalizedInfrastructureSegment(component),
+  );
+  const infrastructureIndex = pathComponents.findIndex(
+    (component) => component === "infrastructure",
+  );
+  if (infrastructureIndex < 0) {
+    return false;
+  }
+
+  const translationIndex = infrastructureIndex + 1;
+  return pathComponents[translationIndex] === "translation";
+}
+
+function invalidInfrastructureRoleFolder(file: ArchitectureFile): string | null {
+  if (
+    file.classification.layer !== ArchitectureLayer.Infrastructure ||
+    file.classification.roleFolder !== RoleFolder.None
+  ) {
+    return null;
+  }
+
+  const pathComponents = file.classification.pathComponents;
+  const normalizedPathComponents = pathComponents.map((component) =>
+    normalizedInfrastructureSegment(component),
+  );
+  const infrastructureIndex = normalizedPathComponents.findIndex(
+    (component) => component === "infrastructure",
+  );
+  if (infrastructureIndex < 0) {
+    return null;
+  }
+
+  const candidate = pathComponents[infrastructureIndex + 1];
+  if (!candidate) {
+    return null;
+  }
+
+  return ALLOWED_INFRASTRUCTURE_ROLE_FOLDERS.has(
+    normalizedInfrastructureSegment(candidate),
+  )
+    ? null
+    : candidate;
+}
+
+function normalizedInfrastructureSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
 }
 
 function concreteTopLevelDeclarations(
@@ -4553,6 +4707,15 @@ const SHAPED_TECHNICAL_ROLE_FOLDERS = new Set<RoleFolder>([
   RoleFolder.InfrastructureTranslationDTOs,
   RoleFolder.InfrastructureEvaluators,
   RoleFolder.InfrastructureErrors,
+]);
+
+const ALLOWED_INFRASTRUCTURE_ROLE_FOLDERS = new Set([
+  "repositories",
+  "gateways",
+  "portadapters",
+  "evaluators",
+  "translation",
+  "errors",
 ]);
 
 const COMPATIBILITY_EVALUATION_OPERATION_NAMES = new Set([

@@ -7,7 +7,9 @@ import {
   InfrastructureErrorsPlacementPolicy,
   InfrastructureErrorsShapePolicy,
   InfrastructureForbiddenPresentationDependencyPolicy,
+  InfrastructureRoleFolderStructurePolicy,
   InfrastructureRepositoriesShapePolicy,
+  InfrastructureTranslationStructurePolicy,
   InfrastructureTranslationDirectionalNamingPolicy,
   makeInfrastructureArchitecturePolicies,
 } from "../../src/Domain/Policies/InfrastructureArchitecturePolicies.ts";
@@ -90,6 +92,69 @@ test("infrastructure translation directional naming flags non-directional bounda
     diagnostics[0]?.ruleID,
     InfrastructureTranslationDirectionalNamingPolicy.ruleID,
   );
+});
+
+test("infrastructure translation structure flags loose files at the translation root", () => {
+  const file = makeFile({
+    repoRelativePath:
+      "Symphony/Infrastructure/Translation/LinterRepoRelativePathModel.ts",
+    roleFolder: RoleFolder.None,
+    topLevelDeclarations: [
+      {
+        name: "LinterRepoRelativePathModel",
+        kind: NominalKind.Class,
+        inheritedTypeNames: [],
+        memberNames: [],
+        coordinate: coordinate(1),
+      },
+    ],
+  });
+
+  const diagnostics = new InfrastructureTranslationStructurePolicy().evaluate(
+    file,
+    new ProjectContext([]),
+  );
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(
+    diagnostics[0]?.ruleID,
+    InfrastructureTranslationStructurePolicy.ruleID,
+  );
+  assert.match(diagnostics[0]?.message ?? "", /Likely categories:/);
+  assert.match(diagnostics[0]?.message ?? "", /Infrastructure\/Translation\/Models/);
+  assert.match(diagnostics[0]?.message ?? "", /Infrastructure\/Translation\/DTOs/);
+});
+
+test("infrastructure role folder structure flags unknown first-level infrastructure folders", () => {
+  const file = makeFile({
+    repoRelativePath:
+      "Symphony/Infrastructure/Analyzers/TypeScriptProjectAnalyzer.ts",
+    roleFolder: RoleFolder.None,
+    topLevelDeclarations: [
+      {
+        name: "TypeScriptProjectAnalyzer",
+        kind: NominalKind.Class,
+        inheritedTypeNames: [],
+        memberNames: [],
+        coordinate: coordinate(1),
+      },
+    ],
+  });
+
+  const diagnostics = new InfrastructureRoleFolderStructurePolicy().evaluate(
+    file,
+    new ProjectContext([]),
+  );
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(
+    diagnostics[0]?.ruleID,
+    InfrastructureRoleFolderStructurePolicy.ruleID,
+  );
+  assert.match(diagnostics[0]?.message ?? "", /Analyzers/);
+  assert.match(diagnostics[0]?.message ?? "", /Repositories/);
+  assert.match(diagnostics[0]?.message ?? "", /Gateways/);
+  assert.match(diagnostics[0]?.message ?? "", /Translation\/Models/);
 });
 
 test("infrastructure errors shape requires StructuredErrorProtocol and full member surface", () => {
@@ -253,7 +318,7 @@ test("infrastructure application contract behavior attachment flags methods atta
 });
 
 test("makeInfrastructureArchitecturePolicies returns the full infrastructure rule set", () => {
-  assert.equal(makeInfrastructureArchitecturePolicies().length, 37);
+  assert.equal(makeInfrastructureArchitecturePolicies().length, 39);
 });
 
 function makeFile(input: {

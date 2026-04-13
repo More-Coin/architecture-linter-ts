@@ -1,13 +1,14 @@
 import type { ArchitectureLintResultContract } from "../../Application/contracts/ports/ArchitectureLintResultContract.ts";
 import type { ArchitectureLintWorkflowContract } from "../../Application/contracts/workflow/ArchitectureLintWorkflowContract.ts";
 import type { ArchitectureLintPortProtocol } from "../../Application/ports/protocols/ArchitectureLintPortProtocol.ts";
+import type { ProjectAnalysisPortProtocol } from "../../Application/ports/protocols/ProjectAnalysisPortProtocol.ts";
 import type { SourceFileDiscoveryPortProtocol } from "../../Application/ports/protocols/SourceFileDiscoveryPortProtocol.ts";
 import { ArchitectureDiagnosticOrderingPolicy } from "../../Domain/Policies/ArchitectureDiagnosticOrderingPolicy.ts";
 import { DefaultArchitecturePolicies } from "../../Domain/Policies/DefaultArchitecturePolicies.ts";
 import type { ArchitecturePolicyProtocol } from "../../Domain/Protocols/ArchitecturePolicyProtocol.ts";
 import { SourceFileDiscoveryGateway } from "../gateways/SourceFileDiscoveryGateway.ts";
-import { TypeScriptProjectAnalyzer } from "../analyzers/TypeScriptProjectAnalyzer.ts";
-import { LinterProjectContextModel } from "../translation/LinterProjectContextModel.ts";
+import { LinterProjectContextModel } from "../translation/models/LinterProjectContextModel.ts";
+import { TypeScriptProjectPortAdapter } from "./TypeScriptProjectPortAdapter.ts";
 
 export class ArchitectureLinterPortAdapter
   implements ArchitectureLintPortProtocol
@@ -15,13 +16,13 @@ export class ArchitectureLinterPortAdapter
   private readonly policies: readonly ArchitecturePolicyProtocol[];
   private readonly sourceFileDiscovery?: SourceFileDiscoveryPortProtocol;
   private readonly projectContextModel: LinterProjectContextModel;
-  private readonly projectAnalyzer?: TypeScriptProjectAnalyzer;
+  private readonly projectAnalyzer?: ProjectAnalysisPortProtocol;
 
   constructor(input: {
     policies?: readonly ArchitecturePolicyProtocol[];
     sourceFileDiscovery?: SourceFileDiscoveryPortProtocol;
     projectContextModel?: LinterProjectContextModel;
-    projectAnalyzer?: TypeScriptProjectAnalyzer;
+    projectAnalyzer?: ProjectAnalysisPortProtocol;
   } = {}) {
     this.policies = input.policies ?? [];
     this.sourceFileDiscovery = input.sourceFileDiscovery;
@@ -37,7 +38,7 @@ export class ArchitectureLinterPortAdapter
       this.sourceFileDiscovery ??
       new SourceFileDiscoveryGateway(workflow.configuration.sourceExtensions);
     const projectAnalyzer =
-      this.projectAnalyzer ?? new TypeScriptProjectAnalyzer(workflow.configuration);
+      this.projectAnalyzer ?? new TypeScriptProjectPortAdapter(workflow.configuration);
     const policies =
       this.policies.length > 0
         ? this.policies

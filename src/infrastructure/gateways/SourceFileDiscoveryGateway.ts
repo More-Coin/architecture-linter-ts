@@ -1,16 +1,15 @@
 import fs from "node:fs";
+import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { SourceFileDiscoveryPortProtocol } from "../../Application/ports/protocols/SourceFileDiscoveryPortProtocol.ts";
 import { ArchitectureLinterInfrastructureError } from "../errors/ArchitectureLinterInfrastructureError.ts";
-import { LinterRepoRelativePathModel } from "../translation/LinterRepoRelativePathModel.ts";
 
 export class SourceFileDiscoveryGateway
   implements SourceFileDiscoveryPortProtocol
 {
   private readonly sourceExtensions: readonly string[];
   private readonly excludedPrefixes: readonly string[];
-  private readonly repoRelativePathModel: LinterRepoRelativePathModel;
 
   constructor(
     sourceExtensions: readonly string[] = [".ts"],
@@ -23,7 +22,6 @@ export class SourceFileDiscoveryGateway
   ) {
     this.sourceExtensions = sourceExtensions;
     this.excludedPrefixes = excludedPrefixes;
-    this.repoRelativePathModel = new LinterRepoRelativePathModel();
   }
 
   discoverSourceFiles(in_: URL): readonly URL[] {
@@ -48,9 +46,9 @@ export class SourceFileDiscoveryGateway
     this.walk(in_, in_, results);
 
     return results.sort((lhs, rhs) =>
-      this.repoRelativePathModel
-        .fromURLs(lhs, in_)
-        .localeCompare(this.repoRelativePathModel.fromURLs(rhs, in_)),
+      repoRelativePathFromURLs(lhs, in_).localeCompare(
+        repoRelativePathFromURLs(rhs, in_),
+      ),
     );
   }
 
@@ -63,7 +61,7 @@ export class SourceFileDiscoveryGateway
 
       const nextPath = `${currentPath}/${entry.name}`;
       const nextURL = pathToFileURL(nextPath);
-      const repoRelativePath = this.repoRelativePathModel.fromURLs(nextURL, rootURL);
+      const repoRelativePath = repoRelativePathFromURLs(nextURL, rootURL);
 
       if (this.shouldSkip(repoRelativePath)) {
         continue;
@@ -100,4 +98,16 @@ export class SourceFileDiscoveryGateway
     const [firstComponent] = repoRelativePath.split("/");
     return firstComponent?.endsWith("UITests") ?? false;
   }
+}
+
+function repoRelativePathFromURLs(fileURL: URL, rootURL: URL): string {
+  const rootPath = path.normalize(fileURLToPath(rootURL));
+  const filePath = path.normalize(fileURLToPath(fileURL));
+  const relativePath = path.relative(rootPath, filePath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    return path.basename(filePath);
+  }
+
+  return relativePath.split(path.sep).join("/");
 }

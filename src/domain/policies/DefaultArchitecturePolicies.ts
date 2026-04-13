@@ -78,6 +78,7 @@ import {
   InfrastructurePortAdaptersInlineTypedInteractionDispatchPolicy,
   InfrastructurePortAdaptersShapePolicy,
   InfrastructureRepositoriesShapePolicy,
+  InfrastructureRoleFolderStructurePolicy,
   InfrastructureTranslationDirectionalNamingPolicy,
   InfrastructureTranslationDTOsNoExecutionOrchestrationSurfacePolicy,
   InfrastructureTranslationDTOsNoIntermediaryOrNormalizationSurfacePolicy,
@@ -86,6 +87,7 @@ import {
   InfrastructureTranslationModelsIntermediaryShapingSurfacePolicy,
   InfrastructureTranslationModelsNoFinalTransportProviderShapeSurfacePolicy,
   InfrastructureTranslationModelsSplitRequestShapingPolicy,
+  InfrastructureTranslationStructurePolicy,
   InfrastructureTranslationShapePolicy,
 } from "./InfrastructureArchitecturePolicies.ts";
 import {
@@ -371,6 +373,14 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
   {
     ruleID: InfrastructureEvaluatorsNoTranslationSurfacePolicy.ruleID,
     make: () => new InfrastructureEvaluatorsNoTranslationSurfacePolicy(),
+  },
+  {
+    ruleID: InfrastructureRoleFolderStructurePolicy.ruleID,
+    make: () => new InfrastructureRoleFolderStructurePolicy(),
+  },
+  {
+    ruleID: InfrastructureTranslationStructurePolicy.ruleID,
+    make: () => new InfrastructureTranslationStructurePolicy(),
   },
   {
     ruleID: InfrastructureTranslationShapePolicy.ruleID,

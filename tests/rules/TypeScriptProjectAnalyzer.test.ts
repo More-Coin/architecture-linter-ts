@@ -10,7 +10,7 @@ import {
 } from "../../src/Domain/Policies/ApplicationArchitecturePolicies.ts";
 import { PresentationControllersUseCaseReferencePolicy } from "../../src/Domain/Policies/PresentationArchitecturePolicies.ts";
 import { SourceFileDiscoveryGateway } from "../../src/Infrastructure/gateways/SourceFileDiscoveryGateway.ts";
-import { TypeScriptProjectAnalyzer } from "../../src/Infrastructure/analyzers/TypeScriptProjectAnalyzer.ts";
+import { TypeScriptProjectPortAdapter } from "../../src/Infrastructure/port-adapters/TypeScriptProjectPortAdapter.ts";
 
 const fixtureRootPath = path.resolve(
   "tests/fixtures/type-script-lint-project",
@@ -21,7 +21,7 @@ test("ts-morph analyzer extracts constructors, parameter properties, and helper-
   const configuration = DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION;
   const discovery = new SourceFileDiscoveryGateway(configuration.sourceExtensions);
   const fileURLs = discovery.discoverSourceFiles(fixtureRootURL);
-  const files = new TypeScriptProjectAnalyzer(configuration).analyzeProject(
+  const files = new TypeScriptProjectPortAdapter(configuration).analyzeProject(
     fixtureRootURL,
     fileURLs,
   );

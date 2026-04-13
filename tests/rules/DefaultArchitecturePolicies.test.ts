@@ -67,6 +67,8 @@ test("default policies include the full currently ported registry", () => {
       "InfrastructureEvaluatorsShapePolicy",
       "InfrastructureEvaluatorsNoExecutionOrchestrationSurfacePolicy",
       "InfrastructureEvaluatorsNoTranslationSurfacePolicy",
+      "InfrastructureRoleFolderStructurePolicy",
+      "InfrastructureTranslationStructurePolicy",
       "InfrastructureTranslationShapePolicy",
       "InfrastructureTranslationModelsIntermediaryShapingSurfacePolicy",
       "InfrastructureTranslationModelsNoFinalTransportProviderShapeSurfacePolicy",
