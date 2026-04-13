@@ -1,5 +1,6 @@
 export * from "./ArchitectureDiagnosticOrderingPolicy.ts";
 export * from "./ArchitecturePathClassificationPolicy.ts";
+export * from "./SourceRootArchitecturePolicies.ts";
 export * from "./AppCompositionPolicies.ts";
 export * from "./ApplicationArchitecturePolicies.ts";
 export * from "./DefaultArchitecturePolicies.ts";

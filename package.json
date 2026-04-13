@@ -1,15 +1,57 @@
 {
   "name": "architecture-linter-ts",
-  "private": true,
+  "description": "Installable TypeScript clean architecture linter powered by ts-morph.",
   "version": "0.1.0",
   "type": "module",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/More-Coin/architecture-linter-ts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/More-Coin/architecture-linter-ts/issues"
+  },
+  "homepage": "https://github.com/More-Coin/architecture-linter-ts#readme",
+  "keywords": [
+    "architecture",
+    "linter",
+    "clean-architecture",
+    "typescript",
+    "ts-morph",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "architecture-linter": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
-    "build": "node --experimental-transform-types ./src/index.ts",
-    "start": "node --experimental-transform-types ./src/app/main.ts",
-    "test": "node --experimental-transform-types --test ./tests/rules/*.test.ts"
+    "build": "tsup",
+    "start": "node --experimental-transform-types ./src/cli.ts",
+    "test": "node --experimental-transform-types --test ./tests/rules/*.test.ts",
+    "test:package": "node ./tests/scripts/package-smoke.mjs",
+    "prepare": "npm run build",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "ts-morph": "^26.0.0",
     "typescript": "^5.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsup": "^8.5.1"
   }
 }

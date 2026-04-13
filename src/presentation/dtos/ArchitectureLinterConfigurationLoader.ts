@@ -4,7 +4,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
   type ArchitectureLinterConfiguration,
+  type LayerDirectoryNames,
   type ModuleAliases,
+  type SourceRootLayoutConfiguration,
 } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
 import { ArchitectureLinterPresentationError } from "../errors/ArchitectureLinterPresentationError.ts";
 
@@ -75,10 +77,18 @@ export class ArchitectureLinterConfigurationLoader {
     }
 
     const moduleAliases = this.parseModuleAliases(value.moduleAliases);
+    const layerDirectoryNames = this.parseLayerDirectoryNames(
+      value.layerDirectoryNames,
+    );
+    const sourceRootLayout = this.parseSourceRootLayout(
+      value.sourceRootLayout,
+    );
     if (
       typeof value.testRootName !== "string" ||
       !this.isStringArray(value.runtimeNamespaceSegments) ||
       typeof value.diagnosticsSubpath !== "string" ||
+      !layerDirectoryNames ||
+      !sourceRootLayout ||
       !moduleAliases ||
       !this.isStringArray(value.disabledRuleIDs) ||
       !this.isStringArray(value.disabledRulePrefixes)
@@ -98,9 +108,59 @@ export class ArchitectureLinterConfigurationLoader {
         typeof value.tsConfigFilePath === "string"
           ? value.tsConfigFilePath
           : DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION.tsConfigFilePath,
+      layerDirectoryNames,
+      sourceRootLayout,
       moduleAliases,
       disabledRuleIDs: value.disabledRuleIDs,
       disabledRulePrefixes: value.disabledRulePrefixes,
+    };
+  }
+
+  private static parseLayerDirectoryNames(
+    value: unknown,
+  ): LayerDirectoryNames | undefined {
+    if (!this.isRecord(value)) {
+      return DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION.layerDirectoryNames;
+    }
+
+    if (
+      typeof value.app !== "string" ||
+      typeof value.application !== "string" ||
+      typeof value.domain !== "string" ||
+      typeof value.infrastructure !== "string" ||
+      typeof value.presentation !== "string"
+    ) {
+      return undefined;
+    }
+
+    return {
+      app: value.app,
+      application: value.application,
+      domain: value.domain,
+      infrastructure: value.infrastructure,
+      presentation: value.presentation,
+    };
+  }
+
+  private static parseSourceRootLayout(
+    value: unknown,
+  ): SourceRootLayoutConfiguration | undefined {
+    if (!this.isRecord(value)) {
+      return DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION.sourceRootLayout;
+    }
+
+    if (
+      !this.isStringArray(value.allowedTopLevelEntries) ||
+      typeof value.allowLooseFilesAtRoot !== "boolean" ||
+      typeof value.enforceCanonicalCasing !== "boolean"
+    ) {
+      return undefined;
+    }
+
+    return {
+      allowedTopLevelEntries: value.allowedTopLevelEntries,
+      allowLooseFilesAtRoot: value.allowLooseFilesAtRoot,
+      enforceCanonicalCasing: value.enforceCanonicalCasing,
     };
   }
 

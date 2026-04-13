@@ -67,11 +67,13 @@ const TYPE_KEYWORDS = new Set([
 
 export class TypeScriptProjectAnalyzer {
   private readonly repoRelativePathModel = new LinterRepoRelativePathModel();
-  private readonly classifier = new ArchitecturePathClassificationPolicy();
+  private readonly classifier: ArchitecturePathClassificationPolicy;
 
   constructor(
     private readonly configuration: ArchitectureLinterConfiguration,
-  ) {}
+  ) {
+    this.classifier = new ArchitecturePathClassificationPolicy(configuration);
+  }
 
   analyzeProject(
     rootURL: URL,

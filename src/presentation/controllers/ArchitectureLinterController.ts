@@ -24,6 +24,10 @@ export class ArchitectureLinterController {
   run(arguments_: readonly string[]): number {
     try {
       const command = new ArchitectureLinterCommandDTO(arguments_);
+      if (command.helpRequested) {
+        return this.renderer.renderHelp();
+      }
+
       const configuration = ArchitectureLinterConfigurationLoader.load({
         rootURL: command.rootURL,
         explicitConfigURL: command.configURL,

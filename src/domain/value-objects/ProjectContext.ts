@@ -17,7 +17,7 @@ export class ProjectContext {
     const uniqueDeclarations = new Map<string, IndexedDeclaration>();
     for (const [name, matchedDeclarations] of declarationsByName) {
       if (matchedDeclarations.length === 1) {
-        uniqueDeclarations.set(name, matchedDeclarations[0]);
+        uniqueDeclarations.set(name, matchedDeclarations[0]!);
       }
     }
 

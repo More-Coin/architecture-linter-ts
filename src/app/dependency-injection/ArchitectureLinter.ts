@@ -34,9 +34,11 @@ export class ArchitectureLinter {
     at: URL,
     scope: ArchitectureLintScope = ArchitectureLintScope.All,
   ): ArchitectureLintResult {
+    const diagnosticRulePrefix = diagnosticRulePrefixForScope(scope);
+
     return this.service.execute({
       rootURL: at,
-      diagnosticRulePrefix: diagnosticRulePrefixForScope(scope),
+      ...(diagnosticRulePrefix ? { diagnosticRulePrefix } : {}),
     });
   }
 }

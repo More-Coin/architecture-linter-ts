@@ -13,6 +13,7 @@ test("default policies include the full currently ported registry", () => {
   assert.deepEqual(
     policies.map((policy) => policy.constructor.name),
     [
+      "SourceRootLayoutPolicy",
       "DomainForbiddenImportPolicy",
       "DomainOuterLayerReferencePolicy",
       "DomainDurableStructurePolicy",

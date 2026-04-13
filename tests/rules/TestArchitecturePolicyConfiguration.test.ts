@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/app/configuration/ArchitectureLinterConfiguration.ts";
 import { TestsDiagnosticsLocationPolicy } from "../../src/domain/policies/TestArchitecturePolicies.ts";
 import { ArchitectureFile } from "../../src/domain/value-objects/ArchitectureFile.ts";
 import { ArchitectureLayer } from "../../src/domain/value-objects/ArchitectureLayer.ts";
@@ -11,18 +12,9 @@ import { RoleFolder } from "../../src/domain/value-objects/RoleFolder.ts";
 
 test("diagnostics location policy uses configured diagnostics subpath", () => {
   const policy = new TestsDiagnosticsLocationPolicy({
+    ...DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
     testRootName: "SampleTests",
-    runtimeNamespaceSegments: [],
     diagnosticsSubpath: "Diagnostics/Architecture",
-    sourceExtensions: [".ts"],
-    tsConfigFilePath: "tsconfig.json",
-    moduleAliases: {
-      runtimeSurface: [],
-      commandSurface: [],
-      diagnostics: ["architecture-linter-ts"],
-    },
-    disabledRuleIDs: [],
-    disabledRulePrefixes: [],
   });
 
   const file = makeFile({
@@ -50,18 +42,8 @@ test("diagnostics location policy uses configured diagnostics subpath", () => {
 
 test("diagnostics location policy accepts nested package test root", () => {
   const policy = new TestsDiagnosticsLocationPolicy({
+    ...DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
     testRootName: "SymphonyTests",
-    runtimeNamespaceSegments: [],
-    diagnosticsSubpath: "Diagnostics/ArchitectureLinter",
-    sourceExtensions: [".ts"],
-    tsConfigFilePath: "tsconfig.json",
-    moduleAliases: {
-      runtimeSurface: [],
-      commandSurface: [],
-      diagnostics: ["architecture-linter-ts"],
-    },
-    disabledRuleIDs: [],
-    disabledRulePrefixes: [],
   });
 
   const file = makeFile({

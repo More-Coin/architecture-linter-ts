@@ -1,10 +1,17 @@
 import path from "node:path";
 
+import type { ArchitectureLinterConfiguration } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
 import { ArchitectureLayer } from "../value-objects/ArchitectureLayer.ts";
 import { FileClassification } from "../value-objects/FileClassification.ts";
 import { RoleFolder } from "../value-objects/RoleFolder.ts";
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
 
 export class ArchitecturePathClassificationPolicy {
+  constructor(
+    private readonly configuration: ArchitectureLinterConfiguration =
+      DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+  ) {}
+
   classify(repoRelativePath: string): FileClassification {
     const normalizedPath = repoRelativePath.replaceAll("\\", "/");
     const components = normalizedPath.split("/").filter(Boolean);
@@ -45,15 +52,32 @@ export class ArchitecturePathClassificationPolicy {
     }
 
     const layerLookup: ReadonlyArray<readonly [string, ArchitectureLayer]> = [
-      ["Domain", ArchitectureLayer.Domain],
-      ["Application", ArchitectureLayer.Application],
-      ["Infrastructure", ArchitectureLayer.Infrastructure],
-      ["Presentation", ArchitectureLayer.Presentation],
-      ["App", ArchitectureLayer.App],
+      [
+        this.configuration.layerDirectoryNames.domain,
+        ArchitectureLayer.Domain,
+      ],
+      [
+        this.configuration.layerDirectoryNames.application,
+        ArchitectureLayer.Application,
+      ],
+      [
+        this.configuration.layerDirectoryNames.infrastructure,
+        ArchitectureLayer.Infrastructure,
+      ],
+      [
+        this.configuration.layerDirectoryNames.presentation,
+        ArchitectureLayer.Presentation,
+      ],
+      [
+        this.configuration.layerDirectoryNames.app,
+        ArchitectureLayer.App,
+      ],
     ];
 
     for (const [segment, layer] of layerLookup) {
-      const layerIndex = components.indexOf(segment);
+      const layerIndex = components.findIndex((component) =>
+        this.matchesSegment(component, segment),
+      );
       if (layerIndex >= 0) {
         return { layer, layerIndex };
       }
@@ -77,92 +101,92 @@ export class ArchitecturePathClassificationPolicy {
 
     switch (layer) {
       case ArchitectureLayer.Domain:
-        switch (next) {
-          case "Protocols":
+        switch (this.normalizedSegment(next)) {
+          case "protocols":
             return RoleFolder.DomainProtocols;
-          case "Policies":
+          case "policies":
             return RoleFolder.DomainPolicies;
-          case "Errors":
+          case "errors":
             return RoleFolder.DomainErrors;
           default:
             return RoleFolder.None;
         }
 
       case ArchitectureLayer.Application:
-        switch (next) {
-          case "Contracts":
-            switch (afterNext) {
-              case "Commands":
+        switch (this.normalizedSegment(next)) {
+          case "contracts":
+            switch (this.normalizedSegment(afterNext)) {
+              case "commands":
                 return RoleFolder.ApplicationContractsCommands;
-              case "Ports":
+              case "ports":
                 return RoleFolder.ApplicationContractsPorts;
-              case "Workflow":
+              case "workflow":
                 return RoleFolder.ApplicationContractsWorkflow;
               default:
                 return RoleFolder.None;
             }
-          case "Errors":
+          case "errors":
             return RoleFolder.ApplicationErrors;
-          case "Ports":
-            return afterNext === "Protocols"
+          case "ports":
+            return this.matchesSegment(afterNext, "Protocols")
               ? RoleFolder.ApplicationPortsProtocols
               : RoleFolder.None;
-          case "StateTransitions":
+          case "statetransitions":
             return RoleFolder.ApplicationStateTransitions;
-          case "UseCases":
+          case "usecases":
             return RoleFolder.ApplicationUseCases;
-          case "Services":
+          case "services":
             return RoleFolder.ApplicationServices;
           default:
             return RoleFolder.None;
         }
 
       case ArchitectureLayer.Infrastructure:
-        switch (next) {
-          case "Repositories":
+        switch (this.normalizedSegment(next)) {
+          case "repositories":
             return RoleFolder.InfrastructureRepositories;
-          case "Gateways":
+          case "gateways":
             return RoleFolder.InfrastructureGateways;
-          case "PortAdapters":
+          case "portadapters":
             return RoleFolder.InfrastructurePortAdapters;
-          case "Evaluators":
+          case "evaluators":
             return RoleFolder.InfrastructureEvaluators;
-          case "Translation":
-            switch (afterNext) {
-              case "Models":
+          case "translation":
+            switch (this.normalizedSegment(afterNext)) {
+              case "models":
                 return RoleFolder.InfrastructureTranslationModels;
-              case "DTOs":
+              case "dtos":
                 return RoleFolder.InfrastructureTranslationDTOs;
               default:
                 return RoleFolder.None;
             }
-          case "Errors":
+          case "errors":
             return RoleFolder.InfrastructureErrors;
           default:
             return RoleFolder.None;
         }
 
       case ArchitectureLayer.Presentation:
-        switch (next) {
-          case "Controllers":
+        switch (this.normalizedSegment(next)) {
+          case "controllers":
             return RoleFolder.PresentationControllers;
-          case "Routes":
+          case "routes":
             return RoleFolder.PresentationRoutes;
-          case "DTOs":
+          case "dtos":
             return RoleFolder.PresentationDTOs;
-          case "Presenters":
+          case "presenters":
             return RoleFolder.PresentationPresenters;
-          case "Renderers":
+          case "renderers":
             return RoleFolder.PresentationRenderers;
-          case "Middleware":
+          case "middleware":
             return RoleFolder.PresentationMiddleware;
-          case "Errors":
+          case "errors":
             return RoleFolder.PresentationErrors;
-          case "ViewModels":
+          case "viewmodels":
             return RoleFolder.PresentationViewModels;
-          case "Views":
+          case "views":
             return RoleFolder.PresentationViews;
-          case "Styles":
+          case "styles":
             return RoleFolder.PresentationStyles;
           default:
             return RoleFolder.None;
@@ -172,15 +196,15 @@ export class ArchitecturePathClassificationPolicy {
         return RoleFolder.None;
 
       case ArchitectureLayer.App:
-        switch (next) {
-          case "Configuration":
+        switch (this.normalizedSegment(next)) {
+          case "configuration":
             return RoleFolder.AppConfiguration;
-          case "Runtime":
+          case "runtime":
             return RoleFolder.AppRuntime;
-          case "DependencyInjection":
+          case "dependencyinjection":
             return RoleFolder.AppDependencyInjection;
           default:
-            switch (fileStem.toLowerCase()) {
+            switch (this.normalizedSegment(fileStem)) {
               case "main":
                 return RoleFolder.AppEntrypoint;
               case "bootstrap":
@@ -202,5 +226,16 @@ export class ArchitecturePathClassificationPolicy {
     components: readonly string[],
   ): string | undefined {
     return components.at(index + 1);
+  }
+
+  private matchesSegment(
+    actual: string | undefined,
+    expected: string,
+  ): boolean {
+    return this.normalizedSegment(actual) === this.normalizedSegment(expected);
+  }
+
+  private normalizedSegment(value: string | undefined): string {
+    return (value ?? "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
   }
 }

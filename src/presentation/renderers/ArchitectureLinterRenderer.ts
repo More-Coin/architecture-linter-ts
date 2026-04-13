@@ -1,8 +1,17 @@
 import type { ArchitectureLintResult } from "../../application/contracts/ports/ArchitectureLintResultContract.ts";
 import type { ArchitectureLinterStructuredErrorProtocol } from "../../application/contracts/errors/ArchitectureLinterStructuredErrorProtocol.ts";
 import type { ArchitectureDiagnostic } from "../../domain/value-objects/ArchitectureDiagnostic.ts";
+import { ARCHITECTURE_LINTER_HELP_LINES } from "../ArchitectureLinterCLIUsage.ts";
 
 export class ArchitectureLinterRenderer {
+  renderHelp(): number {
+    for (const line of ARCHITECTURE_LINTER_HELP_LINES) {
+      console.log(line);
+    }
+
+    return 0;
+  }
+
   render(result: ArchitectureLintResult): number {
     for (const diagnostic of result.diagnostics) {
       console.log(this.renderedDiagnostic(diagnostic));

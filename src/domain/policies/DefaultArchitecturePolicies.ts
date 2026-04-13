@@ -1,5 +1,8 @@
 import type { ArchitectureLinterConfiguration } from "../../app/configuration/ArchitectureLinterConfiguration.ts";
 import {
+  SourceRootLayoutPolicy,
+} from "./SourceRootArchitecturePolicies.ts";
+import {
   AppConfigurationShapePolicy,
   AppDependencyInjectionShapePolicy,
   AppRuntimeShapePolicy,
@@ -151,6 +154,10 @@ export class DefaultArchitecturePolicies {
 }
 
 const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
+  {
+    ruleID: SourceRootLayoutPolicy.ruleID,
+    make: (configuration) => new SourceRootLayoutPolicy(configuration),
+  },
   {
     ruleID: DomainForbiddenImportPolicy.ruleID,
     make: () => new DomainForbiddenImportPolicy(),

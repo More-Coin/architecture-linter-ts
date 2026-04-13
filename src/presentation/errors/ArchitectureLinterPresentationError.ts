@@ -1,5 +1,6 @@
 import type { ArchitectureLinterStructuredErrorProtocol } from "../../application/contracts/errors/ArchitectureLinterStructuredErrorProtocol.ts";
 import type { StructuredErrorProtocol } from "../../domain/protocols/StructuredErrorProtocol.ts";
+import { ARCHITECTURE_LINTER_USAGE } from "../ArchitectureLinterCLIUsage.ts";
 
 export class ArchitectureLinterPresentationError
   extends Error
@@ -23,10 +24,9 @@ export class ArchitectureLinterPresentationError
   static invalidArguments(): ArchitectureLinterPresentationError {
     return new ArchitectureLinterPresentationError({
       code: "architecture_linter.invalid_arguments",
-      message:
-        "Usage: architecture-linter [repo-root] [--scope tests] [--config path]",
+      message: ARCHITECTURE_LINTER_USAGE,
       details:
-        "Provide zero or one repo-root argument plus optional --scope and --config flags.",
+        "Provide zero or one root argument plus optional --scope and --config flags. When omitted, the CLI lints ./src.",
     });
   }
 

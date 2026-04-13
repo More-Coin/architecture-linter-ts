@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/app/configuration/ArchitectureLinterConfiguration.ts";
 import {
   TestsImportOwnershipPolicy,
   TestsLinterHarnessExtractionPolicy,
@@ -19,11 +20,8 @@ import { ProjectContext } from "../../src/domain/value-objects/ProjectContext.ts
 import { RoleFolder } from "../../src/domain/value-objects/RoleFolder.ts";
 
 const TEST_CONFIGURATION = {
+  ...DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
   testRootName: "SymphonyTests",
-  runtimeNamespaceSegments: [],
-  diagnosticsSubpath: "Diagnostics/ArchitectureLinter",
-  sourceExtensions: [".ts"],
-  tsConfigFilePath: "tsconfig.json",
   moduleAliases: {
     runtimeSurface: ["SymphonyRuntime"],
     commandSurface: ["ArchitectureLinterCLI"],

@@ -8,6 +8,7 @@ export class ArchitectureLinterCommandDTO {
   readonly rootURL: URL;
   readonly scope: ArchitectureLintScope;
   readonly configURL?: URL;
+  readonly helpRequested: boolean;
 
   constructor(
     arguments_: readonly string[],
@@ -15,15 +16,25 @@ export class ArchitectureLinterCommandDTO {
   ) {
     const defaultRootPath = "./src";
     const userArguments = ArchitectureLinterCommandDTO.userArguments(arguments_);
-    if (userArguments.includes("--help") || userArguments.includes("-h")) {
-      throw ArchitectureLinterPresentationError.invalidArguments();
-    }
+    const helpRequested =
+      userArguments.includes("--help") || userArguments.includes("-h");
 
     let rootPath = defaultRootPath;
     let scope = ArchitectureLintScope.All;
     let configPath: string | undefined;
     let hasSeenScope = false;
     let index = 0;
+
+    this.helpRequested = helpRequested;
+
+    if (helpRequested) {
+      this.rootURL = pathToFileURL(
+        path.resolve(currentWorkingDirectory, defaultRootPath),
+      );
+      this.scope = scope;
+      this.configURL = undefined;
+      return;
+    }
 
     while (index < userArguments.length) {
       const argument = userArguments[index];

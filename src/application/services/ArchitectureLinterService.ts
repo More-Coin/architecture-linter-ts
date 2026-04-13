@@ -21,9 +21,11 @@ export class ArchitectureLinterService {
   private normalizedWorkflow(
     workflow: ArchitectureLintWorkflowContract,
   ): ArchitectureLintWorkflowContract {
+    const diagnosticRulePrefix = workflow.diagnosticRulePrefix;
+
     return {
       rootURL: this.standardizedFileURL(workflow.rootURL),
-      diagnosticRulePrefix: workflow.diagnosticRulePrefix,
+      ...(diagnosticRulePrefix ? { diagnosticRulePrefix } : {}),
     };
   }
 
