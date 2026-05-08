@@ -13,6 +13,7 @@ export * from "./ArchitectureOperationalUseOccurrence.ts";
 export * from "./ArchitectureStoredMemberDeclaration.ts";
 export * from "./ArchitectureStringLiteralOccurrence.ts";
 export * from "./ArchitectureTopLevelDeclaration.ts";
+export * from "./ArchitectureTopLevelValueDeclaration.ts";
 export * from "./ArchitectureTypeReference.ts";
 export * from "./ArchitectureTypedMemberOccurrence.ts";
 export * from "./FileClassification.ts";

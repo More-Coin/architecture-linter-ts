@@ -1,12 +1,12 @@
 # architecture-linter-ts
 
-`architecture-linter-ts` is a TypeScript clean architecture linter powered by `ts-morph`. It can run as a CLI from `node_modules/.bin` in another project, or it can be imported as a small programmatic API.
+`architecture-linter-ts` is a TypeScript/TSX clean architecture linter powered by `ts-morph`. It can run as a CLI from `node_modules/.bin` in another project, or it can be imported as a small programmatic API.
 
 ## Requirements
 
 - Node.js 20 or newer
 - A `tsconfig.json` in the consuming repository
-- TypeScript source files under `./src` by default, unless you pass a different root path
+- TypeScript or TSX source files under `./src` by default, unless you pass a different root path
 
 ## Install From GitHub
 
@@ -77,7 +77,7 @@ Minimal example:
   "testRootName": "<ProjectName>Tests",
   "runtimeNamespaceSegments": [],
   "diagnosticsSubpath": "Diagnostics/ArchitectureLinter",
-  "sourceExtensions": [".ts"],
+  "sourceExtensions": [".ts", ".tsx"],
   "tsConfigFilePath": "tsconfig.json",
   "moduleAliases": {
     "runtimeSurface": [],

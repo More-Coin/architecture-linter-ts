@@ -65,6 +65,7 @@ function makeProject(
       target: ScriptTarget.ES2022,
       module: ts.ModuleKind.NodeNext,
       moduleResolution: ts.ModuleResolutionKind.NodeNext,
+      jsx: ts.JsxEmit.Preserve,
       allowJs: false,
     },
   });

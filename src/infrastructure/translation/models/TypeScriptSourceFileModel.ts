@@ -5,6 +5,7 @@ import {
   Node,
   Scope,
   SyntaxKind,
+  VariableDeclarationKind,
   type ClassDeclaration,
   type Expression,
   type GetAccessorDeclaration,
@@ -19,6 +20,7 @@ import {
 import { ArchitecturePathClassificationPolicy } from "../../../Domain/Policies/ArchitecturePathClassificationPolicy.ts";
 import { ArchitectureFile } from "../../../Domain/ValueObjects/ArchitectureFile.ts";
 import type { ArchitectureLinterConfiguration } from "../../../Domain/ValueObjects/ArchitectureLinterConfiguration.ts";
+import type { ArchitectureTopLevelValueDeclarationKind } from "../../../Domain/ValueObjects/ArchitectureTopLevelValueDeclaration.ts";
 import { NominalKind } from "../../../Domain/ValueObjects/NominalKind.ts";
 import type { SourceCoordinate } from "../../../Domain/ValueObjects/SourceCoordinate.ts";
 
@@ -73,6 +75,8 @@ export class TypeScriptSourceFileModel {
     const classification = this.classifier.classify(repoRelativePath);
     const typeReferences = this.collectTypeReferences(sourceFile);
     const topLevelDeclarations = this.collectTopLevelDeclarations(sourceFile);
+    const topLevelValueDeclarations =
+      this.collectTopLevelValueDeclarations(sourceFile);
     const methodDeclarations = this.collectMethodDeclarations(sourceFile);
     const constructorDeclarations = this.collectConstructorDeclarations(sourceFile);
     const computedPropertyDeclarations = this.collectComputedPropertyDeclarations(
@@ -122,6 +126,7 @@ export class TypeScriptSourceFileModel {
       operationalUseOccurrences,
       typeReferences,
       topLevelDeclarations,
+      topLevelValueDeclarations,
       nestedNominalDeclarations: [],
     });
   }
@@ -179,6 +184,53 @@ export class TypeScriptSourceFileModel {
             coordinate: coordinateFor(statement.getNameNode()),
           },
         ];
+      }
+
+      return [];
+    });
+  }
+
+  private collectTopLevelValueDeclarations(sourceFile: SourceFile) {
+    return sourceFile.getStatements().flatMap((statement) => {
+      if (Node.isFunctionDeclaration(statement)) {
+        const name = statement.getName();
+        if (!name) {
+          return [];
+        }
+
+        return [
+          {
+            name,
+            kind: "function" as const,
+            isExported: statement.isExported(),
+            coordinate: coordinateFor(statement.getNameNode() ?? statement),
+          },
+        ];
+      }
+
+      if (Node.isVariableStatement(statement)) {
+        const kind = topLevelValueDeclarationKindFor(
+          statement.getDeclarationKind(),
+        );
+        if (!kind) {
+          return [];
+        }
+
+        return statement.getDeclarations().flatMap((declaration) => {
+          const nameNode = declaration.getNameNode();
+          if (!Node.isIdentifier(nameNode)) {
+            return [];
+          }
+
+          return [
+            {
+              name: nameNode.getText(),
+              kind,
+              isExported: statement.isExported(),
+              coordinate: coordinateFor(nameNode),
+            },
+          ];
+        });
       }
 
       return [];
@@ -678,6 +730,22 @@ export class TypeScriptSourceFileModel {
     );
   }
 
+}
+
+function topLevelValueDeclarationKindFor(
+  kind: VariableDeclarationKind,
+): ArchitectureTopLevelValueDeclarationKind | undefined {
+  switch (kind) {
+    case VariableDeclarationKind.Const:
+      return "const";
+    case VariableDeclarationKind.Let:
+      return "let";
+    case VariableDeclarationKind.Var:
+      return "var";
+    case VariableDeclarationKind.AwaitUsing:
+    case VariableDeclarationKind.Using:
+      return undefined;
+  }
 }
 
 function repoRelativePathFromURLs(fileURL: URL, rootURL: URL): string {

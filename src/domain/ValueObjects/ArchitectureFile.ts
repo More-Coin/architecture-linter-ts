@@ -11,6 +11,7 @@ import type { ArchitectureOperationalUseOccurrence } from "./ArchitectureOperati
 import type { ArchitectureStoredMemberDeclaration } from "./ArchitectureStoredMemberDeclaration.ts";
 import type { ArchitectureStringLiteralOccurrence } from "./ArchitectureStringLiteralOccurrence.ts";
 import type { ArchitectureTopLevelDeclaration } from "./ArchitectureTopLevelDeclaration.ts";
+import type { ArchitectureTopLevelValueDeclaration } from "./ArchitectureTopLevelValueDeclaration.ts";
 import type { ArchitectureTypeReference } from "./ArchitectureTypeReference.ts";
 import type { ArchitectureTypedMemberOccurrence } from "./ArchitectureTypedMemberOccurrence.ts";
 import { FileClassification } from "./FileClassification.ts";
@@ -32,6 +33,7 @@ export interface ArchitectureFileInput {
   readonly operationalUseOccurrences?: readonly ArchitectureOperationalUseOccurrence[];
   readonly typeReferences?: readonly ArchitectureTypeReference[];
   readonly topLevelDeclarations?: readonly ArchitectureTopLevelDeclaration[];
+  readonly topLevelValueDeclarations?: readonly ArchitectureTopLevelValueDeclaration[];
   readonly nestedNominalDeclarations?: readonly ArchitectureNestedNominalDeclaration[];
 }
 
@@ -51,6 +53,7 @@ export class ArchitectureFile {
   readonly operationalUseOccurrences: readonly ArchitectureOperationalUseOccurrence[];
   readonly typeReferences: readonly ArchitectureTypeReference[];
   readonly topLevelDeclarations: readonly ArchitectureTopLevelDeclaration[];
+  readonly topLevelValueDeclarations: readonly ArchitectureTopLevelValueDeclaration[];
   readonly nestedNominalDeclarations: readonly ArchitectureNestedNominalDeclaration[];
 
   constructor(input: ArchitectureFileInput) {
@@ -71,6 +74,9 @@ export class ArchitectureFile {
     this.operationalUseOccurrences = [...(input.operationalUseOccurrences ?? [])];
     this.typeReferences = [...(input.typeReferences ?? [])];
     this.topLevelDeclarations = [...(input.topLevelDeclarations ?? [])];
+    this.topLevelValueDeclarations = [
+      ...(input.topLevelValueDeclarations ?? []),
+    ];
     this.nestedNominalDeclarations = [...(input.nestedNominalDeclarations ?? [])];
   }
 

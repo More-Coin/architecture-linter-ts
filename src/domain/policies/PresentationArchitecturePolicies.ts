@@ -459,6 +459,7 @@ export class PresentationViewsShapePolicy
       PresentationViewsShapePolicy.ruleID,
       "View",
       "Presentation/Views",
+      { includeTopLevelValueDeclarations: true },
     );
   }
 }
@@ -551,15 +552,19 @@ function diagnoseSimplePresentationRoleFile(
   ruleID: string,
   requiredSuffix: string,
   roleLabel: string,
+  options: {
+    readonly includeTopLevelValueDeclarations?: boolean;
+  } = {},
 ): readonly ArchitectureDiagnostic[] {
   if (!shouldEvaluate) {
     return [];
   }
 
   const diagnostics: ArchitectureDiagnostic[] = [];
+  const roleDeclarations = presentationRoleDeclarations(file, options);
 
-  for (const declaration of file.topLevelDeclarations) {
-    if (declaration.kind === NominalKind.Protocol) {
+  for (const declaration of roleDeclarations) {
+    if (declaration.isProtocol) {
       diagnostics.push(
         file.diagnostic(
           ruleID,
@@ -578,7 +583,7 @@ function diagnoseSimplePresentationRoleFile(
         file.diagnostic(
           ruleID,
           presentationRemediationMessage(
-            `${roleLabel} files should expose types ending in '${requiredSuffix}', but '${declaration.name}' does not.`,
+            `${roleLabel} files should expose declarations ending in '${requiredSuffix}', but '${declaration.name}' does not.`,
             `Rename '${declaration.name}' to end with '${requiredSuffix}' or move it to the presentation role that matches its responsibility.`,
           ),
           declaration.coordinate,
@@ -587,10 +592,9 @@ function diagnoseSimplePresentationRoleFile(
     }
   }
 
-  const hasRequiredType = file.topLevelDeclarations.some(
+  const hasRequiredType = roleDeclarations.some(
     (declaration) =>
-      declaration.kind !== NominalKind.Protocol &&
-      declaration.name.endsWith(requiredSuffix),
+      !declaration.isProtocol && declaration.name.endsWith(requiredSuffix),
   );
 
   if (!hasRequiredType) {
@@ -598,14 +602,45 @@ function diagnoseSimplePresentationRoleFile(
       file.diagnostic(
         ruleID,
         presentationRemediationMessage(
-          `${roleLabel} files must expose at least one type ending in '${requiredSuffix}'.`,
-          `Add or rename a concrete ${requiredSuffix.toLowerCase()} type in ${file.repoRelativePath} so the file clearly owns that presentation role.`,
+          `${roleLabel} files must expose at least one declaration ending in '${requiredSuffix}'.`,
+          `Add or rename a concrete ${requiredSuffix.toLowerCase()} declaration in ${file.repoRelativePath} so the file clearly owns that presentation role.`,
         ),
       ),
     );
   }
 
   return diagnostics;
+}
+
+function presentationRoleDeclarations(
+  file: ArchitectureFile,
+  options: {
+    readonly includeTopLevelValueDeclarations?: boolean;
+  },
+): readonly Array<{
+  readonly name: string;
+  readonly isProtocol: boolean;
+  readonly coordinate: { readonly line: number; readonly column: number };
+}> {
+  const nominalDeclarations = file.topLevelDeclarations.map((declaration) => ({
+    name: declaration.name,
+    isProtocol: declaration.kind === NominalKind.Protocol,
+    coordinate: declaration.coordinate,
+  }));
+
+  if (!options.includeTopLevelValueDeclarations) {
+    return nominalDeclarations;
+  }
+
+  const valueDeclarations = file.topLevelValueDeclarations.map(
+    (declaration) => ({
+      name: declaration.name,
+      isProtocol: false,
+      coordinate: declaration.coordinate,
+    }),
+  );
+
+  return [...nominalDeclarations, ...valueDeclarations];
 }
 
 function hasAllowedPresentationDTOSuffix(name: string): boolean {

@@ -36,7 +36,7 @@ export const DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION: ArchitectureLinterConfig
     testRootName: "<ProjectName>Tests",
     runtimeNamespaceSegments: [],
     diagnosticsSubpath: "Diagnostics/ArchitectureLinter",
-    sourceExtensions: [".ts"],
+    sourceExtensions: [".ts", ".tsx"],
     tsConfigFilePath: "tsconfig.json",
     layerDirectoryNames: {
       app: "App",

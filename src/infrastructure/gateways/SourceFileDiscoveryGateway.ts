@@ -12,7 +12,7 @@ export class SourceFileDiscoveryGateway
   private readonly excludedPrefixes: readonly string[];
 
   constructor(
-    sourceExtensions: readonly string[] = [".ts"],
+    sourceExtensions: readonly string[] = [".ts", ".tsx"],
     excludedPrefixes: readonly string[] = [
       ".build/",
       ".git/",

@@ -8,6 +8,7 @@ import {
   PresentationDTOsShapePolicy,
   PresentationErrorsPlacementPolicy,
   PresentationInfrastructureReferencePolicy,
+  PresentationViewsShapePolicy,
   makePresentationArchitecturePolicies,
 } from "../../src/Domain/Policies/PresentationArchitecturePolicies.ts";
 import { ArchitectureFile } from "../../src/Domain/ValueObjects/ArchitectureFile.ts";
@@ -180,6 +181,61 @@ test("presentation infrastructure reference flags direct infrastructure dependen
   assert.equal(diagnostics[0]?.line, 9);
 });
 
+test("presentation views shape accepts top-level function and const view declarations", () => {
+  const functionFile = makeFile({
+    repoRelativePath: "Symphony/Presentation/Views/OrderView.tsx",
+    roleFolder: RoleFolder.PresentationViews,
+    topLevelValueDeclarations: [
+      {
+        name: "OrderView",
+        kind: "function",
+        isExported: true,
+        coordinate: coordinate(3),
+      },
+    ],
+  });
+  const constFile = makeFile({
+    repoRelativePath: "Symphony/Presentation/Views/OrderSummaryView.tsx",
+    roleFolder: RoleFolder.PresentationViews,
+    topLevelValueDeclarations: [
+      {
+        name: "OrderSummaryView",
+        kind: "const",
+        isExported: false,
+        coordinate: coordinate(3),
+      },
+    ],
+  });
+  const policy = new PresentationViewsShapePolicy();
+
+  assert.deepEqual(policy.evaluate(functionFile, new ProjectContext([])), []);
+  assert.deepEqual(policy.evaluate(constFile, new ProjectContext([])), []);
+});
+
+test("presentation views shape still flags misnamed exported TSX components", () => {
+  const file = makeFile({
+    repoRelativePath: "Symphony/Presentation/Views/OrderScreen.tsx",
+    roleFolder: RoleFolder.PresentationViews,
+    topLevelValueDeclarations: [
+      {
+        name: "OrderScreen",
+        kind: "const",
+        isExported: true,
+        coordinate: coordinate(4),
+      },
+    ],
+  });
+
+  const diagnostics = new PresentationViewsShapePolicy().evaluate(
+    file,
+    new ProjectContext([]),
+  );
+
+  assert.equal(diagnostics.length, 2);
+  assert.equal(diagnostics[0]?.ruleID, PresentationViewsShapePolicy.ruleID);
+  assert.equal(diagnostics[0]?.line, 4);
+});
+
 test("makePresentationArchitecturePolicies returns the full presentation rule set", () => {
   assert.equal(makePresentationArchitecturePolicies().length, 15);
 });
@@ -189,6 +245,7 @@ function makeFile(input: {
   readonly roleFolder: RoleFolder;
   readonly layer?: ArchitectureLayer;
   readonly topLevelDeclarations?: ConstructorParameters<typeof ArchitectureFile>[0]["topLevelDeclarations"];
+  readonly topLevelValueDeclarations?: ConstructorParameters<typeof ArchitectureFile>[0]["topLevelValueDeclarations"];
   readonly typeReferences?: ConstructorParameters<typeof ArchitectureFile>[0]["typeReferences"];
   readonly functionTypeOccurrences?: ConstructorParameters<typeof ArchitectureFile>[0]["functionTypeOccurrences"];
 }): ArchitectureFile {
@@ -217,6 +274,7 @@ function makeFile(input: {
     operationalUseOccurrences: [],
     typeReferences: input.typeReferences ?? [],
     topLevelDeclarations: input.topLevelDeclarations ?? [],
+    topLevelValueDeclarations: input.topLevelValueDeclarations ?? [],
     nestedNominalDeclarations: [],
   });
 }
