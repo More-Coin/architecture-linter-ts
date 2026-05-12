@@ -17,6 +17,7 @@ import type { IndexedDeclaration } from "../ValueObjects/IndexedDeclaration.ts";
 import type { ProjectContext } from "../ValueObjects/ProjectContext.ts";
 import { RoleFolder } from "../ValueObjects/RoleFolder.ts";
 import type { SourceCoordinate } from "../ValueObjects/SourceCoordinate.ts";
+import { richRemediationMessage } from "./shared/RichRemediationMessage.ts";
 
 export class InfrastructureRepositoriesShapePolicy
   implements ArchitecturePolicyProtocol
@@ -75,6 +76,144 @@ export class InfrastructureRepositoriesShapePolicy
           ),
         ),
       );
+    }
+
+    return diagnostics;
+  }
+}
+
+/**
+ * `infrastructure.repositories.role_fit` — concrete repository-shaped types
+ * under `Infrastructure/Repositories` must actually behave like repository
+ * adapters. Two violation paths, mirroring Swift's
+ * `InfrastructureRepositoriesRoleFitPolicy`:
+ *
+ *   (a) **Public surface leak.** A public method parameter or return type
+ *       resolves to a declaration in `InfrastructureTranslationDTOs`,
+ *       `InfrastructureTranslationModels`, or `PresentationDTOs`. Repository
+ *       boundaries speak Domain/Application types; provider DTOs and
+ *       translation models stay internal to Infrastructure.
+ *
+ *   (b) **Missing inward conformance.** A `*Repository`-suffixed concrete
+ *       declaration declares no inherited type ending in `Repository`
+ *       (i.e. no inward Repository protocol/interface). A real repository
+ *       adapter fulfils an inward repository contract; a "repository" that
+ *       conforms to nothing is usually mislabeled translation or gateway
+ *       behavior.
+ */
+export class InfrastructureRepositoriesRoleFitPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "infrastructure.repositories.role_fit";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isInfrastructureRepositoryFile) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+
+    const repositoryDeclarations = file.topLevelDeclarations.filter(
+      (declaration) =>
+        declaration.kind !== NominalKind.Protocol &&
+        declaration.kind !== NominalKind.Enum &&
+        declaration.name.endsWith("Repository"),
+    );
+
+    for (const declaration of repositoryDeclarations) {
+      // Path (a) — public surface leak.
+      const seenLeakKeys = new Set<string>();
+      for (const method of file.methodDeclarations) {
+        if (method.enclosingTypeName !== declaration.name) {
+          continue;
+        }
+        if (!method.isPublicOrOpen) {
+          continue;
+        }
+
+        for (const typeName of [
+          ...method.parameterTypeNames,
+          ...method.returnTypeNames,
+        ]) {
+          const leakedDeclaration = context.uniqueDeclaration(typeName);
+          if (!leakedDeclaration) {
+            continue;
+          }
+          if (!isRepositoryBoundaryLeakRoleFolder(leakedDeclaration.roleFolder)) {
+            continue;
+          }
+
+          const key = `${typeName}:${method.coordinate.line}:${method.coordinate.column}`;
+          if (seenLeakKeys.has(key)) {
+            continue;
+          }
+          seenLeakKeys.add(key);
+
+          diagnostics.push(
+            file.diagnostic(
+              InfrastructureRepositoriesRoleFitPolicy.ruleID,
+              richRemediationMessage({
+                summary: `Repository '${declaration.name}' exposes outer-layer DTO/model type '${typeName}' in its public operation surface (from ${leakedDeclaration.repoRelativePath}).`,
+                categories: [
+                  "provider DTO leaked through repository API",
+                  "translation model exposed instead of Domain/Application result",
+                  "Presentation DTO leaked into Infrastructure repository boundary",
+                ],
+                signs: [
+                  "public repository method parameter or return type resolves to Infrastructure/Translation/DTOs, Infrastructure/Translation/Models, or Presentation/DTOs",
+                  `repository file lives under Infrastructure/Repositories and the offending type is '${typeName}'`,
+                  "repository type name ends with 'Repository'",
+                ],
+                architecturalNote:
+                  "Repositories hide provider and persistence details from UseCases. Public repository APIs speak Domain/Application types through inward protocols, while provider DTOs and translation models stay internal to Infrastructure.",
+                destination:
+                  "Return or accept Domain/Application types at the repository protocol boundary. Keep provider DTOs in Infrastructure/Translation/DTOs and normalized intermediary models in Infrastructure/Translation/Models.",
+                decomposition: `Move '${typeName}' out of the public surface of '${declaration.name}'. Map provider DTOs or translation models inside the repository (or in a translation helper) and return the Domain/Application type required by the inward Repository protocol. If the method really is a provider call returning provider data, move it to Infrastructure/Gateways or Infrastructure/PortAdapters instead of exposing it as a repository operation.`,
+              }),
+              method.coordinate,
+            ),
+          );
+        }
+      }
+
+      // Path (b) — missing inward Repository conformance.
+      const hasRepositoryConformance = declaration.inheritedTypeNames.some(
+        (inherited) =>
+          inherited.endsWith("Repository") ||
+          inherited.endsWith("RepositoryProtocol") ||
+          inherited.endsWith("RepositoryInterface") ||
+          inherited.endsWith("RepositoryPort"),
+      );
+
+      if (!hasRepositoryConformance) {
+        diagnostics.push(
+          file.diagnostic(
+            InfrastructureRepositoriesRoleFitPolicy.ruleID,
+            richRemediationMessage({
+              summary: `'${declaration.name}' is repository-shaped in ${file.repoRelativePath} but does not declare an inward Repository protocol/interface conformance.`,
+              categories: [
+                "repository-shaped type without inward protocol conformance",
+                "translation/helper/mapper behavior placed in Infrastructure/Repositories",
+                "gateway or port-adapter behavior mislabeled as repository",
+              ],
+              signs: [
+                `type '${declaration.name}' ends with 'Repository' and lives under Infrastructure/Repositories`,
+                "no inherited type ends with Repository / RepositoryProtocol / RepositoryInterface / RepositoryPort",
+                "the linter cannot confirm the type fulfils any inward repository contract",
+              ],
+              architecturalNote:
+                "A repository is a concrete Infrastructure adapter that fulfils an inward repository/data-access protocol and hides persistence or provider details from UseCases. A 'repository' that conforms to nothing is usually translation, gateway, or evaluator behavior wearing the wrong name.",
+              destination:
+                "Infrastructure/Repositories for true data-source adaptation backed by an inward Domain/Protocols (or Application/Ports/Protocols) Repository contract; otherwise the role folder that matches the actual behavior.",
+              decomposition: `Decide what '${declaration.name}' actually owns. If it adapts persistence or provider data access, make it conform to the matching inward Repository protocol/interface and keep public methods returning Domain/Application types. If it primarily maps provider shapes, move the mapping to Infrastructure/Translation/Models or to a private helper used only by this repository. If it primarily executes an external boundary, move it to Infrastructure/Gateways. If it only exposes DTOs or response models, move those types to Infrastructure/Translation/DTOs and keep a concrete *Repository in this file only when there is actual repository behavior.`,
+            }),
+            declaration.coordinate,
+          ),
+        );
+      }
     }
 
     return diagnostics;
@@ -1732,6 +1871,7 @@ export class InfrastructureCrossLayerProtocolConformancePolicy
 export function makeInfrastructureArchitecturePolicies(): readonly ArchitecturePolicyProtocol[] {
   return [
     new InfrastructureRepositoriesShapePolicy(),
+    new InfrastructureRepositoriesRoleFitPolicy(),
     new InfrastructureGatewaysShapePolicy(),
     new InfrastructureGatewaysRoleFitPolicy(),
     new InfrastructurePortAdaptersShapePolicy(),
@@ -1832,11 +1972,41 @@ function diagnosePortAdapterMethodPattern(
   });
 }
 
+/**
+ * Lift the historic terse `infrastructureRemediationMessage(summary, destination)`
+ * helper into the Swift-parity rich format (5 canonical markers). New
+ * Stage 6 Infrastructure policies populate the markers directly through
+ * `richRemediationMessage`; legacy call sites in this file delegate through
+ * this helper. Sites that want hand-tailored markers use
+ * `infrastructureStructuredRemediationMessage` directly.
+ *
+ * Acceptance criterion: PARITY.md §6.2.
+ */
 function infrastructureRemediationMessage(
   summary: string,
   destination: string,
 ): string {
-  return `${summary} ${destination}`;
+  return richRemediationMessage({
+    summary,
+    categories: [
+      "Infrastructure-layer boundary, role, or surface violation",
+    ],
+    signs: [
+      "the file is classified under Infrastructure but does not satisfy the rule's expected shape, placement, or surface",
+    ],
+    architecturalNote:
+      "Infrastructure hosts concrete boundary execution (Repositories, Gateways, PortAdapters, Evaluators), intermediary shaping (Translation/Models, Translation/DTOs), and structured errors. Role folders keep responsibility legible to consumers and to the linter.",
+    destination,
+    decomposition: `Follow the destination guidance: ${destination}`,
+  });
+}
+
+function isRepositoryBoundaryLeakRoleFolder(roleFolder: RoleFolder): boolean {
+  return (
+    roleFolder === RoleFolder.InfrastructureTranslationDTOs ||
+    roleFolder === RoleFolder.InfrastructureTranslationModels ||
+    roleFolder === RoleFolder.PresentationDTOs
+  );
 }
 
 function infrastructureStructuredRemediationMessage(input: {

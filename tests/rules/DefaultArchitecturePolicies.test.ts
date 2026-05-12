@@ -70,6 +70,7 @@ test("default policies include the full currently ported registry", () => {
       "AppDependencyInjectionShapePolicy",
       "CompositionRootInwardReferencePolicy",
       "InfrastructureRepositoriesShapePolicy",
+      "InfrastructureRepositoriesRoleFitPolicy",
       "InfrastructureGatewaysShapePolicy",
       "InfrastructureGatewaysRoleFitPolicy",
       "InfrastructurePortAdaptersShapePolicy",

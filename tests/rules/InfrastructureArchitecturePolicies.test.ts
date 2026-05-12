@@ -341,7 +341,7 @@ test("infrastructure application contract behavior attachment flags methods atta
 });
 
 test("makeInfrastructureArchitecturePolicies returns the full infrastructure rule set", () => {
-  assert.equal(makeInfrastructureArchitecturePolicies().length, 39);
+  assert.equal(makeInfrastructureArchitecturePolicies().length, 40);
 });
 
 function makeFile(input: {

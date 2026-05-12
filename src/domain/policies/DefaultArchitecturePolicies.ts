@@ -93,6 +93,7 @@ import {
   InfrastructurePortAdaptersInlineTypedBoundaryCompatibilityEvaluationPolicy,
   InfrastructurePortAdaptersInlineTypedInteractionDispatchPolicy,
   InfrastructurePortAdaptersShapePolicy,
+  InfrastructureRepositoriesRoleFitPolicy,
   InfrastructureRepositoriesShapePolicy,
   InfrastructureRoleFolderStructurePolicy,
   InfrastructureTranslationDirectionalNamingPolicy,
@@ -414,6 +415,10 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
   {
     ruleID: InfrastructureRepositoriesShapePolicy.ruleID,
     make: () => new InfrastructureRepositoriesShapePolicy(),
+  },
+  {
+    ruleID: InfrastructureRepositoriesRoleFitPolicy.ruleID,
+    make: () => new InfrastructureRepositoriesRoleFitPolicy(),
   },
   {
     ruleID: InfrastructureGatewaysShapePolicy.ruleID,
