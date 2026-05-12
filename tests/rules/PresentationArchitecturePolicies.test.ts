@@ -237,7 +237,7 @@ test("presentation views shape still flags misnamed exported TSX components", ()
 });
 
 test("makePresentationArchitecturePolicies returns the full presentation rule set", () => {
-  assert.equal(makePresentationArchitecturePolicies().length, 15);
+  assert.equal(makePresentationArchitecturePolicies().length, 19);
 });
 
 function makeFile(input: {

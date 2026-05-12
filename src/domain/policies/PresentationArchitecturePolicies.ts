@@ -5,6 +5,8 @@ import type { ArchitectureFile } from "../ValueObjects/ArchitectureFile.ts";
 import { NominalKind } from "../ValueObjects/NominalKind.ts";
 import type { ProjectContext } from "../ValueObjects/ProjectContext.ts";
 import { RoleFolder } from "../ValueObjects/RoleFolder.ts";
+import { iterateReferenceOccurrences } from "./shared/ReferenceOccurrences.ts";
+import { richRemediationMessage } from "./shared/RichRemediationMessage.ts";
 
 export class PresentationControllerShapePolicy
   implements ArchitecturePolicyProtocol
@@ -526,6 +528,254 @@ export class PresentationInfrastructureReferencePolicy
   }
 }
 
+// =============================================================================
+// Stage 5 — Swift-parity Presentation policies (CleanArchitectureBoundaryPolicies)
+// =============================================================================
+
+/**
+ * `presentation.usecase_reference` — Presentation files must not depend
+ * directly on Application UseCases; workflows should reach UseCases via
+ * Application Services. Broader than the deprecated controllers-specific
+ * rule: this policy fires on every Presentation file kind (controllers,
+ * routes, DTOs, presenters, renderers, middleware, view-models, views,
+ * styles, errors). Mirrors Swift's `PresentationUseCaseReferencePolicy`.
+ */
+export class PresentationUseCaseReferencePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "presentation.usecase_reference";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isPresentation) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenNames = new Set<string>();
+
+    for (const occurrence of iterateReferenceOccurrences(file)) {
+      if (seenNames.has(occurrence.name)) {
+        continue;
+      }
+      seenNames.add(occurrence.name);
+
+      const declaration = context.uniqueDeclaration(occurrence.name);
+      if (!declaration || declaration.roleFolder !== RoleFolder.ApplicationUseCases) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          PresentationUseCaseReferencePolicy.ruleID,
+          richRemediationMessage({
+            summary: `Presentation file '${file.repoRelativePath}' directly references Application UseCase '${occurrence.name}' from ${declaration.repoRelativePath}.`,
+            categories: [
+              "direct use-case injection or construction from Presentation",
+              "presentation workflow orchestration",
+              "inline use-case invocation from a controller, view model, presenter, route, renderer, middleware, DTO, style, or error type",
+            ],
+            signs: [
+              "stored property, constructor parameter, method parameter, return type, computed property, construction, or static access names a UseCase inside a Presentation file",
+              "Presentation code calls execute, run, handle, or invoke on a UseCase",
+            ],
+            architecturalNote:
+              "Presentation calls Application Services, not UseCases. Services orchestrate UseCases on the Application side, so Presentation never holds a UseCase reference directly.",
+            destination:
+              "Application/Services for the workflow boundary that Presentation depends on; the UseCase stays behind that Service.",
+            decomposition: `Move the call that uses '${occurrence.name}' behind an Application/Services type, inject that Service into Presentation, and keep orchestration out of the Presentation file.`,
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
+/**
+ * `presentation.port_protocol_reference` — Presentation must not invoke
+ * Application port protocols directly; UseCases own port invocation behind
+ * an Application Service surface. Mirrors Swift's
+ * `PresentationPortProtocolReferencePolicy`.
+ */
+export class PresentationPortProtocolReferencePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "presentation.port_protocol_reference";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isPresentation) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenNames = new Set<string>();
+
+    for (const occurrence of iterateReferenceOccurrences(file)) {
+      if (seenNames.has(occurrence.name)) {
+        continue;
+      }
+      seenNames.add(occurrence.name);
+
+      const declaration = context.uniqueDeclaration(occurrence.name);
+      if (
+        !declaration ||
+        declaration.roleFolder !== RoleFolder.ApplicationPortsProtocols
+      ) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          PresentationPortProtocolReferencePolicy.ruleID,
+          richRemediationMessage({
+            summary: `Presentation file '${file.repoRelativePath}' directly references Application port protocol '${occurrence.name}' from ${declaration.repoRelativePath}.`,
+            categories: [
+              "direct port invocation from Presentation",
+              "missing focused use case behind the port",
+              "service API exposing an Application port instead of passive Application Contracts",
+            ],
+            signs: [
+              "Presentation stores, accepts, resolves, or calls a Repository, Gateway, Client, Adapter, Provider, or PortProtocol seam",
+              "Presentation wants to fetch, save, emit, schedule, execute, or resolve through a port",
+            ],
+            architecturalNote:
+              "Presentation calls the Application Service only; port invocation belongs in an Application UseCase orchestrated by a Service.",
+            destination:
+              "Application/UseCases behind Application/Services.",
+            decomposition: `Move the port invocation that uses '${occurrence.name}' into an Application UseCase, move workflow coordination into an Application Service, and let Presentation depend on the Application Service only.`,
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
+/**
+ * `presentation.composition_reference` — Presentation must not reference
+ * composition-root types: App layer declarations or anything in the
+ * App/DependencyInjection role folder. Mirrors Swift's
+ * `PresentationCompositionReferencePolicy`.
+ */
+export class PresentationCompositionReferencePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "presentation.composition_reference";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isPresentation) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenNames = new Set<string>();
+
+    for (const occurrence of iterateReferenceOccurrences(file)) {
+      if (seenNames.has(occurrence.name)) {
+        continue;
+      }
+      seenNames.add(occurrence.name);
+
+      const declaration = context.uniqueDeclaration(occurrence.name);
+      if (
+        !declaration ||
+        (declaration.layer !== ArchitectureLayer.App &&
+          declaration.roleFolder !== RoleFolder.AppDependencyInjection)
+      ) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          PresentationCompositionReferencePolicy.ruleID,
+          richRemediationMessage({
+            summary: `Presentation file '${file.repoRelativePath}' references composition-root type '${occurrence.name}' from ${declaration.repoRelativePath}.`,
+            categories: [
+              "composition root accessed from Presentation",
+              "dependency container leaked into Presentation",
+              "presentation code bypassing Application service injection",
+            ],
+            signs: [
+              "type reference, construction, static access, or resolver call names an App or App/DependencyInjection type",
+              "Presentation resolves dependencies instead of receiving an Application Service",
+            ],
+            architecturalNote:
+              "App/DependencyInjection is the wiring root; Presentation receives Application Services from it but does not reference composition types directly.",
+            destination:
+              "App/DependencyInjection wiring plus Application/Services dependencies in Presentation.",
+            decomposition: `Move dependency construction and resolution involving '${occurrence.name}' to App/DependencyInjection, inject the Application Service into Presentation, and keep Presentation free of composition-root types.`,
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
+/**
+ * `presentation.dependency_resolution` — Presentation must not use service
+ * locators, dependency containers, singleton dependency access, decorator
+ * injection, or framework DI helpers. Receive Application Services through
+ * the constructor instead. Mirrors Swift's
+ * `PresentationDependencyResolutionPolicy`.
+ */
+export class PresentationDependencyResolutionPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "presentation.dependency_resolution";
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isPresentation) {
+      return [];
+    }
+
+    return file.dependencyResolutionOccurrences.map((occurrence) =>
+      file.diagnostic(
+        PresentationDependencyResolutionPolicy.ruleID,
+        richRemediationMessage({
+          summary: `Presentation file '${file.repoRelativePath}' resolves dependencies directly. Offending access: ${describePresentationResolutionAccess(occurrence)}.`,
+          categories: [
+            "service-locator or dependency-container resolution inside Presentation",
+            "static dependency-registry access from Presentation",
+            "decorator-mediated injection on a Presentation declaration",
+            "singleton dependency access from a Presentation file",
+          ],
+          signs: [
+            "Presentation references Container, ServiceLocator, DependencyContainer, Resolver, Registry, Injector, AppGraph, Dependencies, or DependencyValues",
+            "a static member such as .resolve/.get/.register/.shared/.default/.live appears on a dependency-shaped type inside Presentation",
+            "@Inject, @Injected, @Dependency, or @Provided decorates a Presentation class, method, or member",
+          ],
+          architecturalNote:
+            "Presentation receives Application Services from App/DependencyInjection through constructor injection; service locators, dependency containers, decorator injection, and singleton dependency access bypass that wiring.",
+          destination:
+            "App/DependencyInjection for resolution; Application/Services as the Presentation-facing workflow API; Infrastructure for concrete implementations.",
+          decomposition:
+            "Move dependency resolution to App/DependencyInjection, inject Application Services into Presentation through the constructor, move any port/protocol invocation into an Application UseCase behind a Service, and keep concrete implementations in Infrastructure.",
+        }),
+        occurrence.coordinate,
+      ),
+    );
+  }
+}
+
 export function makePresentationArchitecturePolicies(): readonly ArchitecturePolicyProtocol[] {
   return [
     new PresentationControllerShapePolicy(),
@@ -543,6 +793,10 @@ export function makePresentationArchitecturePolicies(): readonly ArchitecturePol
     new PresentationViewsShapePolicy(),
     new PresentationStylesShapePolicy(),
     new PresentationInfrastructureReferencePolicy(),
+    new PresentationUseCaseReferencePolicy(),
+    new PresentationPortProtocolReferencePolicy(),
+    new PresentationCompositionReferencePolicy(),
+    new PresentationDependencyResolutionPolicy(),
   ];
 }
 
@@ -658,9 +912,41 @@ function hasAllowedPresentationErrorSuffix(name: string): boolean {
   );
 }
 
+/**
+ * Lift the historic terse `presentationRemediationMessage(summary, destination)`
+ * helper into the Swift-parity rich format (5 canonical markers). The new
+ * Stage 5 Presentation policies populate the markers directly through
+ * `richRemediationMessage`; legacy call sites in this file delegate through
+ * this helper so every Presentation diagnostic exposes Likely categories,
+ * signs, architectural note, destination, and explicit decomposition guidance.
+ *
+ * Acceptance criterion: PARITY.md §6.2.
+ */
 function presentationRemediationMessage(
   summary: string,
   destination: string,
 ): string {
-  return `${summary} ${destination}`;
+  return richRemediationMessage({
+    summary,
+    categories: [
+      "Presentation-layer boundary, role, or surface violation",
+    ],
+    signs: [
+      "the file is classified under Presentation but does not satisfy the rule's expected shape, placement, or surface",
+    ],
+    architecturalNote:
+      "Presentation depends on Application Services (and Application Contracts) through inward injection; controllers, routes, DTOs, presenters, renderers, middleware, view-models, views, styles, and errors keep that boundary visible to consumers and to the linter.",
+    destination,
+    decomposition: `Follow the destination guidance: ${destination}`,
+  });
+}
+
+function describePresentationResolutionAccess(occurrence: {
+  readonly baseName: string;
+  readonly memberName?: string;
+}): string {
+  if (occurrence.memberName === undefined) {
+    return `@${occurrence.baseName}`;
+  }
+  return `${occurrence.baseName}.${occurrence.memberName}`;
 }

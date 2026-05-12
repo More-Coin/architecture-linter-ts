@@ -107,19 +107,22 @@ import {
   InfrastructureTranslationShapePolicy,
 } from "./InfrastructureArchitecturePolicies.ts";
 import {
+  PresentationCompositionReferencePolicy,
   PresentationControllerShapePolicy,
   PresentationControllersFunctionSeamPolicy,
   PresentationControllersServiceReferencePolicy,
-  PresentationControllersUseCaseReferencePolicy,
+  PresentationDependencyResolutionPolicy,
   PresentationDTOsShapePolicy,
   PresentationErrorsPlacementPolicy,
   PresentationErrorsShapePolicy,
   PresentationInfrastructureReferencePolicy,
   PresentationMiddlewareShapePolicy,
+  PresentationPortProtocolReferencePolicy,
   PresentationPresentersShapePolicy,
   PresentationRenderersShapePolicy,
   PresentationRouteShapePolicy,
   PresentationStylesShapePolicy,
+  PresentationUseCaseReferencePolicy,
   PresentationViewModelsShapePolicy,
   PresentationViewsShapePolicy,
 } from "./PresentationArchitecturePolicies.ts";
@@ -583,9 +586,27 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
     ruleID: PresentationControllersServiceReferencePolicy.ruleID,
     make: () => new PresentationControllersServiceReferencePolicy(),
   },
+  // PresentationControllersUseCaseReferencePolicy is intentionally NOT
+  // registered here. Swift defines but deprecates `presentation.controllers
+  // .usecase_reference` (the broader `presentation.usecase_reference` rule
+  // applies to every Presentation file role). The TS class stays exported
+  // for manual/custom policy construction, but the default registry mirrors
+  // Swift's deprecated-but-unregistered stance. See PARITY.md §2.3 and §3.8.
   {
-    ruleID: PresentationControllersUseCaseReferencePolicy.ruleID,
-    make: () => new PresentationControllersUseCaseReferencePolicy(),
+    ruleID: PresentationUseCaseReferencePolicy.ruleID,
+    make: () => new PresentationUseCaseReferencePolicy(),
+  },
+  {
+    ruleID: PresentationPortProtocolReferencePolicy.ruleID,
+    make: () => new PresentationPortProtocolReferencePolicy(),
+  },
+  {
+    ruleID: PresentationCompositionReferencePolicy.ruleID,
+    make: () => new PresentationCompositionReferencePolicy(),
+  },
+  {
+    ruleID: PresentationDependencyResolutionPolicy.ruleID,
+    make: () => new PresentationDependencyResolutionPolicy(),
   },
   {
     ruleID: PresentationControllersFunctionSeamPolicy.ruleID,
