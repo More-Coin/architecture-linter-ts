@@ -4,7 +4,7 @@ This document tracks the gap between the Swift reference linter (`More-Coin/Arch
 
 - **Swift source of truth:** `ArchitectureLinter/ArchitectureLinterRules/Sources/*.swift` (version `0.2.5`)
 - **TypeScript source of truth:** `src/domain/policies/*.ts`
-- **Last refreshed:** 2026-05-12 (v3)
+- **Last refreshed:** 2026-05-12 (v4 — Stage 3 landed)
 
 > **Read this section first.** Throughout this document, **registered** means "included by default in one of the policy factories" — specifically:
 > - `DefaultArchitecturePolicies.make()` for file-level architectural policies, and
@@ -19,11 +19,11 @@ This document tracks the gap between the Swift reference linter (`More-Coin/Arch
 | Side | Defined standalone policy ruleIDs in source | Registered (default) | Defined-but-not-registered |
 |------|---|---|---|
 | Swift `0.2.5` | 121 | 120 (all via `DefaultArchitecturePolicies.make()`) | 1 (`presentation.controllers.usecase_reference`, deprecated) |
-| TypeScript    | 109 | **107 total** — 105 file policies via `DefaultArchitecturePolicies.make()` + 2 project policies via `DefaultArchitecturePolicies.makeProjectPolicies()` (`SourceRootEmptyDirectoryPolicy`, `InfrastructureEmptyDirectoryPolicy`) | 2 (`ArchitectureDiagnosticOrderingPolicy`, `ArchitecturePathClassificationPolicy` — utility classifiers, not architectural rules) |
+| TypeScript    | 112 | **110 total** — 108 file policies via `DefaultArchitecturePolicies.make()` + 2 project policies via `DefaultArchitecturePolicies.makeProjectPolicies()` (`SourceRootEmptyDirectoryPolicy`, `InfrastructureEmptyDirectoryPolicy`) | 2 (`ArchitectureDiagnosticOrderingPolicy`, `ArchitecturePathClassificationPolicy` — utility classifiers, not architectural rules) |
 
 The "defined standalone policy ruleIDs" column counts the primary `ruleID` of each policy class. It excludes the secondary `surfaceRuleID` strings (`domain.errors.surface`, `application.errors.surface`) emitted by existing policies — those are catalogued in §3.9.
 
-**Registered-vs-registered parity gap:** TS is missing 19 Swift-registered ruleIDs. TS additionally registers 6 ruleIDs that Swift does not register (4 legitimate TS-specific extras + 1 deprecated-in-Swift rule TS still ships + 1 TS-specific Translation-structure rule). See §2.
+**Registered-vs-registered parity gap (post-Stage 3):** TS is missing **16** Swift-registered ruleIDs (was 19 before Stage 3 closed `domain.dependency_resolution`, `architecture.service_role_placement`, `architecture.technical_seam_protocol_placement`). TS additionally registers 6 ruleIDs that Swift does not register (4 legitimate TS-specific extras + 1 deprecated-in-Swift rule TS still ships + 1 TS-specific Translation-structure rule). See §2.
 
 The brief's original "18 Swift-only" count was off-by-one against current `main`: it missed `infrastructure.repositories.role_fit`, which Swift `0.2.5` registers but TS does not.
 
@@ -31,7 +31,7 @@ The brief's original "18 Swift-only" count was off-by-one against current `main`
 
 ## 2. Diff summary (registered-vs-registered)
 
-### 2.1 Swift-registered rule IDs missing from TS — 19
+### 2.1 Swift-registered rule IDs missing from TS — 16 (was 19; 3 closed in Stage 3)
 
 ```
 application.ambiguous_role_name
@@ -43,9 +43,6 @@ application.services.usecase_construction
 application.usecases.boundary_type_reference
 application.usecases.dependency_resolution
 application.usecases.usecase_reference
-architecture.service_role_placement
-architecture.technical_seam_protocol_placement
-domain.dependency_resolution
 infrastructure.repositories.role_fit                              ← surfaced in Swift 0.2.5; was missed in v1 of this matrix
 infrastructure.unknown_subdirectory
 presentation.composition_reference
@@ -53,6 +50,14 @@ presentation.dependency_resolution
 presentation.port_protocol_reference
 presentation.usecase_reference
 tests.swiftpm_test_targets_must_point_to_repo_test_root
+```
+
+#### Closed in Stage 3 (commit `f0b0db6`)
+
+```
+architecture.service_role_placement                ✅ ArchitectureServiceRolePlacementPolicy (CrossArchitecturePolicies.ts)
+architecture.technical_seam_protocol_placement     ✅ TechnicalSeamProtocolPlacementPolicy   (CrossArchitecturePolicies.ts)
+domain.dependency_resolution                       ✅ DomainDependencyResolutionPolicy        (CrossArchitecturePolicies.ts)
 ```
 
 ### 2.2 TS-registered rule IDs that Swift does not register — 6
@@ -94,7 +99,7 @@ Columns:
 |---|---|---|---|---|---|---|---|
 | DomainForbiddenImportPolicy | `domain.forbidden_import` | ✅ | DomainForbiddenImportPolicy | ✅ | present | none | covered |
 | DomainOuterLayerReferencePolicy | `domain.outer_layer_reference` | ✅ | same | ✅ | present | none | covered |
-| DomainDependencyResolutionPolicy | `domain.dependency_resolution` | ✅ | — | — | **missing** | Implement using shared DI helper (Stage 3) | violating fixture + valid fixture + rich-remediation assertion + coord test + disabled-ID test |
+| DomainDependencyResolutionPolicy | `domain.dependency_resolution` | ✅ | DomainDependencyResolutionPolicy | ✅ | **present** (landed Stage 3, `f0b0db6`) | — | covered: Container.resolve violation, @Inject decorator violation, non-Domain silence, clean Domain silence, disabled-ID (`tests/rules/CrossArchitecturePolicies.test.ts`) |
 | DomainDurableStructurePolicy | `domain.durable_structure` | ✅ | same | ✅ | present | none | covered |
 | DomainPolicyPurityPolicy | `domain.policy_forbidden_api` | ✅ | same | ✅ | present | none | covered |
 | DomainPolicyShapePolicy | `domain.policy_shape` | ✅ | same | ✅ | present | none | covered |
@@ -102,8 +107,8 @@ Columns:
 | DomainErrorsShapePolicy | `domain.errors.shape` (+ TS `domain.errors.surface` secondary) | ✅ | DomainErrorsShapePolicy | ✅ | present | TS emits a second ruleID via `surfaceRuleID`; keep as documented TS extra | covered |
 | DomainErrorsPlacementPolicy | `domain.errors.placement` | ✅ | same | ✅ | present | none | covered |
 | RepositoryProtocolPlacementPolicy | `domain.repository_protocol_placement` | ✅ | same | ✅ | present | none | covered |
-| ArchitectureServiceRolePlacementPolicy | `architecture.service_role_placement` | ✅ | — | — | **missing** | New cross-architecture policy (Stage 3). Catch `*Service` top-level types outside `Application/Services`; skip test files. Reuse rich-remediation helper. Decide source-file home (proposal: new `CrossArchitecturePolicies.ts`). | fixture per layer (Domain/Infrastructure/Presentation having `*Service`) + valid Application/Services fixture + remediation + coord + disabled-prefix |
-| TechnicalSeamProtocolPlacementPolicy | `architecture.technical_seam_protocol_placement` | ✅ | — | — | **missing** | New cross-architecture policy (Stage 3). Catch interfaces/types ending in `RepositoryProtocol|GatewayProtocol|ClientProtocol|AdapterProtocol|ProviderProtocol|PortProtocol`/`Interface`/`Port` variants outside `Application/Ports/Protocols` (PortProtocol family) or `Domain/Protocols` (RepositoryProtocol). Widen Swift's suffix list to include `*Interface` and `*Port` because TS rarely uses `*Protocol`; document the widening. | per-suffix violating fixture + valid placement fixtures (Application/Ports/Protocols + Domain/Protocols) + Infrastructure-seam-next-to-impl fixture + remediation + coord + disabled-ID |
+| ArchitectureServiceRolePlacementPolicy | `architecture.service_role_placement` | ✅ | ArchitectureServiceRolePlacementPolicy | ✅ | **present** (landed Stage 3, `f0b0db6`) | — | covered: Service-suffixed type in Infrastructure flagged; Application/Services valid; test files skipped; disabled-ID (`tests/rules/CrossArchitecturePolicies.test.ts`) |
+| TechnicalSeamProtocolPlacementPolicy | `architecture.technical_seam_protocol_placement` | ✅ | TechnicalSeamProtocolPlacementPolicy | ✅ | **present** (landed Stage 3, `f0b0db6`) | — | covered: GatewayInterface in Infrastructure flagged; PortProtocol family valid in Application/Ports/Protocols; Repository family valid in Domain/Protocols; PortProtocol family invalid in Domain/Protocols; non-protocol declarations ignored; disabled-ID (`tests/rules/CrossArchitecturePolicies.test.ts`). Widened TS suffix list (`*Interface`, `*Port` variants) lives in `src/domain/policies/shared/TechnicalSeamSuffixes.ts`. |
 
 ### 3.2 Application
 
@@ -275,14 +280,14 @@ Each will land with its own unit test in `tests/rules/TypeScriptProjectAnalyzer.
 
 ### 6.1 Per-file scope
 
-| File | Helper today | Action |
-|---|---|---|
-| DomainArchitecturePolicies.ts | `domainRemediationMessage(summary, destination)` — terse | Rewrite to 6-field rich format everywhere. Migrate all existing Domain message construction. |
-| ApplicationArchitecturePolicies.ts | `applicationRemediationMessage(summary, destination)` — terse | Rewrite all terse call sites; existing rich helpers stay. |
-| PresentationArchitecturePolicies.ts | `presentationRemediationMessage(summary, destination)` — terse | Rewrite all terse call sites. |
-| InfrastructureArchitecturePolicies.ts | `infrastructureRemediationMessage(summary, destination)` — terse (the structured one is already rich) | Rewrite all terse call sites. |
-| TestArchitecturePolicies.ts | mixed | Audit each helper. Bring any terse helpers to rich format. |
-| AppCompositionPolicies.ts | `appRemediationMessage(...)` — already rich | No change. Promote to shared helper signature. |
+| File | Helper today | Action | Status |
+|---|---|---|---|
+| DomainArchitecturePolicies.ts | `domainRemediationMessage` now delegates to `richRemediationMessage` | All 16 Domain call sites rewritten to the 6-field rich format with Domain-specific categories/signs/architecturalNote/destination/decomposition. | **✅ done in Stage 3 (`f0b0db6`)** |
+| ApplicationArchitecturePolicies.ts | `applicationRemediationMessage(summary, destination)` — terse | Rewrite all terse call sites; existing rich helpers stay. | Stage 4 |
+| PresentationArchitecturePolicies.ts | `presentationRemediationMessage(summary, destination)` — terse | Rewrite all terse call sites. | Stage 5 |
+| InfrastructureArchitecturePolicies.ts | `infrastructureRemediationMessage(summary, destination)` — terse (the structured one is already rich) | Rewrite all terse call sites. | Stage 6 |
+| TestArchitecturePolicies.ts | mixed | Audit each helper. Bring any terse helpers to rich format. | Stage 6 |
+| AppCompositionPolicies.ts | `appRemediationMessage(...)` — already rich | No change. Promote to shared helper signature. | Stage 2 promoted (`b0409fe`) |
 
 ### 6.2 Hard acceptance criterion (registered diagnostics)
 
@@ -327,7 +332,7 @@ Stage 6 README pass must include:
 
 1. **Stage 1 refresh — this document.** ✅ Complete (v3 with Swift 0.2.5 numbers, registered vs defined split that distinguishes `make()` from `makeProjectPolicies()`, repository role-fit added, controllers-usecase decision clarified, rich-remediation promoted to a hard acceptance criterion).
 2. **Stage 2 — shared infrastructure.** Add `constructionOccurrences`, `staticMemberAccessOccurrences`, `decoratorOccurrences`, `dependencyResolutionOccurrences` to ArchitectureFile + ts-morph extractor + tests. Add the shared `richRemediationMessage` helper. Add shared constant lists (technical-seam suffixes, ambiguous-suffix list, forbidden-UseCase-boundary list, DI base names).
-3. **Stage 3 — Domain & cross-architecture.** Decide source organization for `architecture.*` (proposal: new `CrossArchitecturePolicies.ts`). Implement `domain.dependency_resolution`, `architecture.service_role_placement`, `architecture.technical_seam_protocol_placement`. Rich-remediation pass on `DomainArchitecturePolicies.ts`. Register in `DefaultArchitecturePolicies.ts`. Add tests.
+3. **Stage 3 — Domain & cross-architecture.** ✅ Complete (commit `f0b0db6`). Decided source organization (new `src/domain/policies/CrossArchitecturePolicies.ts`). Implemented `domain.dependency_resolution`, `architecture.service_role_placement`, `architecture.technical_seam_protocol_placement`. Rich-remediation pass on `DomainArchitecturePolicies.ts` — all 16 call sites now use `richRemediationMessage`. Registered in `DefaultArchitecturePolicies.ts` in Swift-matching order; `DefaultArchitecturePolicies.test.ts` expected-name list updated in the same commit. 16 new focused tests in `tests/rules/CrossArchitecturePolicies.test.ts`. `npm test` 104/104, `npm run build` clean.
 4. **Stage 4 — Application.** Implement `application.passive_dependency_resolution`, `application.ambiguous_role_name`, four Services rules (`port_protocol_reference`, `service_reference`, `usecase_construction`, `dependency_resolution`), three UseCases rules (`usecase_reference`, `dependency_resolution`, `boundary_type_reference`). Verify operation-shape and abstraction-delegation parity with Swift. Rich-remediation pass on `ApplicationArchitecturePolicies.ts`. Register. Tests.
 5. **Stage 5 — Presentation.** Implement broad `presentation.usecase_reference`, `presentation.port_protocol_reference`, `presentation.composition_reference`, `presentation.dependency_resolution`. **Un-register** `PresentationControllersUseCaseReferencePolicy` from `DefaultArchitecturePolicies.ts` to mirror Swift. Add regression test that controllers emit only the broad rule. Rich-remediation pass on `PresentationArchitecturePolicies.ts`. Register the new policies. Tests.
 6. **Stage 6 — Infrastructure / Tests / Docs final pass.** Implement `infrastructure.repositories.role_fit`. Parity test for `infrastructure.unknown_subdirectory` ↔ TS equivalence. Audit `TestArchitecturePolicies.ts` for any terse helpers. Diagnostic-remediation-parity sampling test from §6.2. README update from §6.5. Final `npm test` + `npm run build`.
@@ -349,6 +354,7 @@ Each stage ends with green tests so the tree is never half-broken.
 
 ## 9. Change log
 
+- **v4 (2026-05-12):** Stage 3 landed (commit `f0b0db6`). Headline counts updated: TS defined goes 109 → 112, TS registered goes 107 → 110 (108 file + 2 project). Registered-vs-registered gap closes 19 → 16. §2.1 lists the 16 remaining gaps and adds a "Closed in Stage 3" sub-block citing the three new classes. §3.1 rows for `DomainDependencyResolutionPolicy`, `ArchitectureServiceRolePlacementPolicy`, `TechnicalSeamProtocolPlacementPolicy` now show TS class + ✅ registered + present + test coverage notes. §6.1 promoted to a status table; `DomainArchitecturePolicies.ts` marked done; remaining files annotated with their target stage. §7 Stage 3 marked complete with the commit reference. Header last-refreshed bumped to v4.
 - **v3 (2026-05-12):** Precision-edit pass. Expanded the definition of *registered* in §1 to include `DefaultArchitecturePolicies.makeProjectPolicies()` and split the TS 107 total into 105 file policies + 2 project policies so the source of each registration is explicit. Renamed the §1 count column to "Defined standalone policy ruleIDs in source" to keep secondary `surfaceRuleID` strings (§3.9) from muddying the headline number. Rewrote the §2.3 controllers-policy note to drop the incorrect "opt-in via `disabledRuleIDs`" wording (`disabledRuleIDs` only suppresses; it cannot enable an unregistered rule). Corrected the §5 analyzer property name `nestedDeclarations` → `nestedNominalDeclarations`. Added a cross-stage maintenance line to §7 telling implementers to keep `DefaultArchitecturePolicies.test.ts` updated at the end of each stage that touches the registry, not only at the end of the parity work.
 - **v2 (2026-05-11):** Refreshed against Swift `0.2.5`. Headline counts changed to 121 defined / 120 registered Swift; 109 defined / 107 registered TS. Added `infrastructure.repositories.role_fit` (gap count went 18 → 19). Split "defined" vs "registered" everywhere. Added §2.3 "Defined-but-not-registered Swift policies". Reclassified `presentation.controllers.usecase_reference` as deprecated/unregistered in Swift + over-registered in TS; added decision to un-register from TS in Stage 5 (§3.3, §3.8, §4 T2, §7 Stage 5). Added README disable-config note for the `infrastructure.unknown_subdirectory` rename (§6.5). Promoted rich-remediation to a hard acceptance criterion with a sampling test (§6.2). Corrected analyzer property name `imports` (was `importOccurrences`). Added §7 Stage 6 to include repository role-fit implementation. Added §3.8 (TS-registered rules to remove) and §3.9 (`surfaceRuleID` emissions).
 - **v1 (2026-05-11):** Initial parity matrix. Reported 112 Swift / 109 TS / 18 Swift-only rule IDs. Did not distinguish defined-in-source from registered-by-default.
