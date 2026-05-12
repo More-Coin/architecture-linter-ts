@@ -51,6 +51,11 @@ import {
   RepositoryProtocolPlacementPolicy,
 } from "./DomainArchitecturePolicies.ts";
 import {
+  ArchitectureServiceRolePlacementPolicy,
+  DomainDependencyResolutionPolicy,
+  TechnicalSeamProtocolPlacementPolicy,
+} from "./CrossArchitecturePolicies.ts";
+import {
   InfrastructureApplicationContractBehaviorAttachmentPolicy,
   InfrastructureCrossLayerProtocolConformancePolicy,
   InfrastructureEmptyDirectoryPolicy,
@@ -191,6 +196,10 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
     make: () => new DomainOuterLayerReferencePolicy(),
   },
   {
+    ruleID: DomainDependencyResolutionPolicy.ruleID,
+    make: () => new DomainDependencyResolutionPolicy(),
+  },
+  {
     ruleID: DomainDurableStructurePolicy.ruleID,
     make: () => new DomainDurableStructurePolicy(),
   },
@@ -217,6 +226,14 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
   {
     ruleID: RepositoryProtocolPlacementPolicy.ruleID,
     make: () => new RepositoryProtocolPlacementPolicy(),
+  },
+  {
+    ruleID: ArchitectureServiceRolePlacementPolicy.ruleID,
+    make: () => new ArchitectureServiceRolePlacementPolicy(),
+  },
+  {
+    ruleID: TechnicalSeamProtocolPlacementPolicy.ruleID,
+    make: () => new TechnicalSeamProtocolPlacementPolicy(),
   },
   {
     ruleID: ApplicationOuterLayerReferencePolicy.ruleID,

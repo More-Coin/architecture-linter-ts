@@ -6,6 +6,10 @@ import type { ArchitectureTopLevelDeclaration } from "../ValueObjects/Architectu
 import type { ProjectContext } from "../ValueObjects/ProjectContext.ts";
 import { NominalKind } from "../ValueObjects/NominalKind.ts";
 import { RoleFolder } from "../ValueObjects/RoleFolder.ts";
+import {
+  richRemediationMessage,
+  type RichRemediationMessageInput,
+} from "./shared/RichRemediationMessage.ts";
 
 export class DomainForbiddenImportPolicy implements ArchitecturePolicyProtocol {
   static readonly ruleID = "domain.forbidden_import";
@@ -26,10 +30,23 @@ export class DomainForbiddenImportPolicy implements ArchitecturePolicyProtocol {
       return [
         file.diagnostic(
           DomainForbiddenImportPolicy.ruleID,
-          domainRemediationMessage(
-            "Domain files must remain framework-free.",
-            `Move import '${importOccurrence.moduleName}' usage out of ${file.repoRelativePath} into Presentation, App, or Infrastructure.`,
-          ),
+          domainRemediationMessage({
+            summary: `Domain file '${file.repoRelativePath}' imports the forbidden module '${importOccurrence.moduleName}'.`,
+            categories: [
+              "platform or framework import in Domain",
+              "Node/browser/runtime API leaking into pure Domain code",
+              "view-layer or transport-layer dependency embedded in Domain",
+            ],
+            signs: [
+              `import statement names '${importOccurrence.moduleName}'`,
+              "Domain file depends on node:fs, node:path, react, express, or an equivalent outer-layer module",
+            ],
+            architecturalNote:
+              "Domain depends only on Domain and broadly allowed language built-ins; framework and platform modules belong in outer layers.",
+            destination:
+              "Presentation for view/render concerns, Infrastructure for IO/persistence/network/vendor concerns, or App for composition and runtime wiring.",
+            decomposition: `Move the behavior that needs '${importOccurrence.moduleName}' out of ${file.repoRelativePath} into an outer-layer collaborator and depend on it through a Domain/Protocols or Application/Ports/Protocols interface.`,
+          }),
           importOccurrence.coordinate,
         ),
       ];
@@ -67,10 +84,23 @@ export class DomainOuterLayerReferencePolicy
       diagnostics.push(
         file.diagnostic(
           DomainOuterLayerReferencePolicy.ruleID,
-          domainRemediationMessage(
-            "Domain files must not reference outer-layer types.",
-            `Replace reference '${reference.name}' in ${file.repoRelativePath} with a Domain-owned abstraction or value type.`,
-          ),
+          domainRemediationMessage({
+            summary: `Domain file '${file.repoRelativePath}' references outer-layer type '${reference.name}' from ${declaration.repoRelativePath}.`,
+            categories: [
+              "outer-layer type leaked into Domain",
+              "Application/Infrastructure/Presentation/App declaration referenced by a Domain entity, value object, or policy",
+              "platform or transport type embedded in a Domain surface",
+            ],
+            signs: [
+              `type reference '${reference.name}' resolves to a declaration in the ${describeLayer(declaration.layer)} layer`,
+              "Domain code names a UseCase, Service, Controller, Gateway, DTO, View, or composition-root type directly",
+            ],
+            architecturalNote:
+              "Domain depends only on Domain; outer-layer types are seen indirectly through inward-facing Domain/Protocols or Application/Ports/Protocols interfaces, never as direct dependencies.",
+            destination:
+              "Domain for the abstraction Domain actually needs; outer-layer concrete types remain in their owning layer.",
+            decomposition: `Replace '${reference.name}' in ${file.repoRelativePath} with a Domain-owned value object, entity, policy, or Domain/Protocols interface, and let the outer-layer collaborator implement that interface from its own layer.`,
+          }),
           reference.coordinate,
         ),
       );
@@ -110,10 +140,22 @@ export class DomainDurableStructurePolicy
       return [
         file.diagnostic(
           DomainDurableStructurePolicy.ruleID,
-          domainRemediationMessage(
-            "Domain files must live under the durable Domain folders.",
-            `Place ${file.repoRelativePath} under Domain/Entities, Domain/ValueObjects, Domain/Policies, Domain/Protocols, or Domain/Errors.`,
-          ),
+          domainRemediationMessage({
+            summary: `Domain file '${file.repoRelativePath}' is not placed under a durable Domain role folder.`,
+            categories: [
+              "Domain file with no canonical role folder",
+              "Domain source at the Domain root instead of a role-specific subfolder",
+            ],
+            signs: [
+              "file path stops at Domain/ without continuing into a role folder",
+              "the linter cannot assign a Domain role because no Entities/ValueObjects/Policies/Protocols/Errors child exists in the path",
+            ],
+            architecturalNote:
+              "Domain is organized around explicit role folders so policies, entities, value objects, protocols, and errors stay visible to the architecture and to role-specific lint rules.",
+            destination:
+              "Domain/Entities for entities, Domain/ValueObjects for value types, Domain/Policies for pure decision logic, Domain/Protocols for inward interfaces, or Domain/Errors for structured error types.",
+            decomposition: `Place ${file.repoRelativePath} under exactly one of Domain/Entities, Domain/ValueObjects, Domain/Policies, Domain/Protocols, or Domain/Errors based on its responsibility, and rename the file to match its canonical role.`,
+          }),
         ),
       ];
     }
@@ -123,10 +165,22 @@ export class DomainDurableStructurePolicy
       return [
         file.diagnostic(
           DomainDurableStructurePolicy.ruleID,
-          domainRemediationMessage(
-            "Domain files must live under the durable Domain folders.",
-            `Move ${file.repoRelativePath} under Domain/Entities, Domain/ValueObjects, Domain/Policies, Domain/Protocols, or Domain/Errors.`,
-          ),
+          domainRemediationMessage({
+            summary: `Domain file '${file.repoRelativePath}' is placed directly under Domain/ instead of a durable Domain role folder.`,
+            categories: [
+              "Domain file living at the Domain/ root rather than a role subfolder",
+              "missing role folder for an otherwise valid Domain file",
+            ],
+            signs: [
+              "the segment immediately after Domain/ is a .ts file rather than a role folder name",
+              "the linter cannot apply role-specific Domain rules because the file has no role classification",
+            ],
+            architecturalNote:
+              "Domain role folders are how Domain types declare their responsibility; files at the Domain root hide that responsibility and bypass the role-specific lint rules.",
+            destination:
+              "Domain/Entities, Domain/ValueObjects, Domain/Policies, Domain/Protocols, or Domain/Errors.",
+            decomposition: `Move ${file.repoRelativePath} under Domain/Entities, Domain/ValueObjects, Domain/Policies, Domain/Protocols, or Domain/Errors based on its responsibility, then rerun the linter so the role-specific Domain rules can validate the new location.`,
+          }),
         ),
       ];
     }
@@ -138,10 +192,23 @@ export class DomainDurableStructurePolicy
     return [
       file.diagnostic(
         DomainDurableStructurePolicy.ruleID,
-        domainRemediationMessage(
-          "This Domain file is under a non-durable folder.",
-          `Move ${file.repoRelativePath} into Domain/Entities, Domain/ValueObjects, Domain/Policies, Domain/Protocols, or Domain/Errors.`,
-        ),
+        domainRemediationMessage({
+          summary: `Domain file '${file.repoRelativePath}' is placed under non-durable folder 'Domain/${topLevelFolder}'.`,
+          categories: [
+            "arbitrary Domain subfolder introduced instead of a canonical role",
+            "ad-hoc taxonomy folder created around tooling or implementation detail",
+            "misnamed folder duplicating an existing Domain role under different terminology",
+          ],
+          signs: [
+            `the path segment immediately after Domain/ is '${topLevelFolder}', which is not one of Entities, ValueObjects, Policies, Protocols, or Errors`,
+            "the file cannot be classified into a canonical Domain role",
+          ],
+          architecturalNote:
+            "Only the five canonical Domain role folders are durable; arbitrary subfolders fragment ownership, hide responsibility, and bypass role-specific Domain rules.",
+          destination:
+            "Domain/Entities, Domain/ValueObjects, Domain/Policies, Domain/Protocols, or Domain/Errors.",
+          decomposition: `Decide whether ${file.repoRelativePath} expresses an entity, value object, policy, inward protocol, or structured error and move it into the matching durable Domain folder; if the folder 'Domain/${topLevelFolder}' is no longer needed, remove it.`,
+        }),
       ),
     ];
   }
@@ -173,10 +240,23 @@ export class DomainPolicyPurityPolicy implements ArchitecturePolicyProtocol {
       diagnostics.push(
         file.diagnostic(
           DomainPolicyPurityPolicy.ruleID,
-          domainRemediationMessage(
-            "Domain policy files must remain pure and must not use platform or I/O APIs.",
-            `Move the logic that needs '${occurrence.name}' out of ${file.repoRelativePath} into an outer-layer collaborator.`,
-          ),
+          domainRemediationMessage({
+            summary: `Domain policy file '${file.repoRelativePath}' references platform or I/O identifier '${occurrence.name}'.`,
+            categories: [
+              "platform/IO identifier used inside a Domain policy",
+              "browser/Node runtime API embedded in pure Domain decision logic",
+              "transport, storage, or environment access in a Domain policy",
+            ],
+            signs: [
+              `identifier '${occurrence.name}' appears in a file under Domain/Policies`,
+              "Domain policy references process, fetch, Buffer, window, document, localStorage, or an equivalent platform symbol",
+            ],
+            architecturalNote:
+              "Domain policies are pure decision logic; platform and IO concerns belong in outer layers and are consumed through Domain/Protocols or Application/Ports/Protocols interfaces.",
+            destination:
+              "Infrastructure or App for platform/IO behavior; Domain/Protocols for the abstraction Domain policies depend on.",
+            decomposition: `Move the behavior that uses '${occurrence.name}' out of ${file.repoRelativePath} into an Infrastructure or App collaborator and inject its inward interface into the policy through Domain/Protocols or Application/Ports/Protocols.`,
+          }),
           occurrence.coordinate,
         ),
       );
@@ -205,10 +285,22 @@ export class DomainPolicyShapePolicy implements ArchitecturePolicyProtocol {
       return [
         file.diagnostic(
           DomainPolicyShapePolicy.ruleID,
-          domainRemediationMessage(
-            "Domain/Policies should expose concrete policy types, not protocols.",
-            `Move protocol '${declaration.name}' from ${file.repoRelativePath} to Domain/Protocols.`,
-          ),
+          domainRemediationMessage({
+            summary: `Domain/Policies file '${file.repoRelativePath}' declares protocol/interface '${declaration.name}' instead of a concrete policy.`,
+            categories: [
+              "abstraction declared in a Domain role that owns concrete decision logic",
+              "missing inward protocol placement",
+              "Domain/Policies file polluted with an interface declaration",
+            ],
+            signs: [
+              `top-level interface '${declaration.name}' is declared under Domain/Policies`,
+              "the file expresses an abstraction but lives in the concrete-policy role folder",
+            ],
+            architecturalNote:
+              "Domain/Policies hosts concrete, pure decision logic; the inward abstractions Domain depends on live in Domain/Protocols.",
+            destination: "Domain/Protocols for inward abstractions.",
+            decomposition: `Move '${declaration.name}' from ${file.repoRelativePath} into Domain/Protocols, and keep ${file.repoRelativePath} for concrete policy types only.`,
+          }),
           declaration.coordinate,
         ),
       ];
@@ -222,10 +314,22 @@ export class DomainPolicyShapePolicy implements ArchitecturePolicyProtocol {
       diagnostics.push(
         file.diagnostic(
           DomainPolicyShapePolicy.ruleID,
-          domainRemediationMessage(
-            "Domain/Policies files must expose at least one policy-shaped top-level type.",
-            `Add or rename a top-level policy type in ${file.repoRelativePath} so at least one declaration ends with 'Policy'.`,
-          ),
+          domainRemediationMessage({
+            summary: `Domain/Policies file '${file.repoRelativePath}' does not expose a policy-shaped top-level type.`,
+            categories: [
+              "Domain/Policies file with no Policy-suffixed declaration",
+              "decision logic with ambiguous role naming",
+            ],
+            signs: [
+              "no top-level type in the file ends with 'Policy'",
+              "the file is classified under Domain/Policies but its purpose is not immediately obvious from any declaration name",
+            ],
+            architecturalNote:
+              "Domain/Policies files announce their responsibility through a Policy-suffixed declaration so collaborators and lint rules can identify them by name.",
+            destination:
+              "Domain/Policies with at least one *Policy declaration, or another Domain role folder if the file is not a policy after all.",
+            decomposition: `Add or rename a top-level type in ${file.repoRelativePath} so its name ends with 'Policy'; if the file is not actually a policy, move it under the Domain role folder that matches its real responsibility (Domain/Entities, Domain/ValueObjects, Domain/Protocols, or Domain/Errors).`,
+          }),
         ),
       );
     }
@@ -257,10 +361,22 @@ export class DomainProtocolNamingPolicy implements ArchitecturePolicyProtocol {
       return [
         file.diagnostic(
           DomainProtocolNamingPolicy.ruleID,
-          domainRemediationMessage(
-            "Domain capability protocols should use role-revealing names ending in 'Protocol'.",
-            `Rename '${declaration.name}' in ${file.repoRelativePath} to end in 'Protocol', or move it to a folder whose naming rules match its role.`,
-          ),
+          domainRemediationMessage({
+            summary: `Domain/Protocols file '${file.repoRelativePath}' declares interface '${declaration.name}' without a role-revealing 'Protocol' or repository-protocol suffix.`,
+            categories: [
+              "inward abstraction with ambiguous role naming",
+              "Domain/Protocols interface missing the 'Protocol' suffix that signals its role",
+            ],
+            signs: [
+              `interface '${declaration.name}' is declared under Domain/Protocols`,
+              "the name does not end with 'Protocol' and is not a recognized repository-protocol family suffix",
+            ],
+            architecturalNote:
+              "Domain capability interfaces communicate their role through their name; outer-layer implementers and lint rules locate them by the 'Protocol' suffix.",
+            destination:
+              "Domain/Protocols for capability interfaces; the name should end with 'Protocol' (e.g. NotifierProtocol) or a recognized repository-protocol suffix (e.g. OrdersRepositoryProtocol).",
+            decomposition: `Rename '${declaration.name}' in ${file.repoRelativePath} to end with 'Protocol', or, if the declaration is not actually a capability interface, move it to the Domain role folder whose naming rules match its real role.`,
+          }),
           declaration.coordinate,
         ),
       ];
@@ -290,10 +406,22 @@ export class DomainErrorsShapePolicy implements ArchitecturePolicyProtocol {
       diagnostics.push(
         file.diagnostic(
           DomainErrorsShapePolicy.ruleID,
-          domainRemediationMessage(
-            "Domain/Errors files should be dedicated to one structured error type per file.",
-            `Split ${file.repoRelativePath} so each structured error type has its own file in Domain/Errors.`,
-          ),
+          domainRemediationMessage({
+            summary: `Domain/Errors file '${file.repoRelativePath}' declares more than one concrete top-level type.`,
+            categories: [
+              "multiple structured error types in a single file",
+              "Domain/Errors file mixing more than one error responsibility",
+            ],
+            signs: [
+              `${concreteDeclarations.length} concrete top-level declarations live in ${file.repoRelativePath}`,
+              "Domain/Errors files normally own exactly one structured error type",
+            ],
+            architecturalNote:
+              "Domain/Errors keeps one structured error type per file so the file name documents the error type and lint rules can match file ↔ type one-to-one.",
+            destination:
+              "Domain/Errors with exactly one structured error type per file.",
+            decomposition: `Split ${file.repoRelativePath} so each structured error type lives in its own file under Domain/Errors, renaming each file to match its single error type.`,
+          }),
         ),
       );
     }
@@ -307,10 +435,22 @@ export class DomainErrorsShapePolicy implements ArchitecturePolicyProtocol {
         return [
           file.diagnostic(
             DomainErrorsShapePolicy.ruleID,
-            domainRemediationMessage(
-              "Domain/Errors should expose concrete structured error types, not protocols.",
-              `Move protocol '${declaration.name}' out of ${file.repoRelativePath} or replace it with a concrete structured error type.`,
-            ),
+            domainRemediationMessage({
+              summary: `Domain/Errors file '${file.repoRelativePath}' declares protocol/interface '${declaration.name}' instead of a concrete structured error type.`,
+              categories: [
+                "abstraction declared in a Domain role that owns concrete error types",
+                "interface placed under Domain/Errors instead of Domain/Protocols",
+              ],
+              signs: [
+                `top-level interface '${declaration.name}' is declared under Domain/Errors`,
+                "the file expresses an abstraction but lives in the concrete-error role folder",
+              ],
+              architecturalNote:
+                "Domain/Errors hosts concrete structured error types; inward abstractions like StructuredErrorProtocol live in Domain/Protocols.",
+              destination:
+                "Domain/Protocols for inward error-shape abstractions, or replace '${declaration.name}' with a concrete structured error type in Domain/Errors.",
+              decomposition: `Either replace '${declaration.name}' with a concrete structured error type in ${file.repoRelativePath}, or move the interface to Domain/Protocols and keep Domain/Errors for concrete error types only.`,
+            }),
             declaration.coordinate,
           ),
         ];
@@ -325,10 +465,24 @@ export class DomainErrorsShapePolicy implements ArchitecturePolicyProtocol {
       diagnostics.push(
         file.diagnostic(
           DomainErrorsShapePolicy.ruleID,
-          domainRemediationMessage(
-            "Domain/Errors files should expose structured error types with the expected naming and members.",
-            `Define a structured error type in ${file.repoRelativePath} named SharedDomainError, <Feature>Error, or <Feature>DomainError.`,
-          ),
+          domainRemediationMessage({
+            summary: `Domain/Errors file '${file.repoRelativePath}' does not expose a structured error type.`,
+            categories: [
+              "Domain/Errors file with no recognized structured error declaration",
+              "concrete error declaration with unexpected naming",
+              "structured error without the required member set",
+            ],
+            signs: [
+              "no top-level type in the file is named SharedDomainError, <Feature>Error, or <Feature>DomainError",
+              "no declaration inherits StructuredErrorProtocol/Error/LocalizedError",
+              "no declaration exposes the required structured-error members (code, message, retryable, details)",
+            ],
+            architecturalNote:
+              "Domain/Errors files announce their error type through both name and member shape so consumers and lint rules can identify the structured error contract.",
+            destination:
+              "Domain/Errors containing a structured error declared with conventional naming and the canonical member set.",
+            decomposition: `Define a structured error type in ${file.repoRelativePath} named SharedDomainError, <Feature>Error, or <Feature>DomainError, conforming to StructuredErrorProtocol and exposing code, message, retryable, and details members.`,
+          }),
         ),
       );
       diagnostics.push(
@@ -346,10 +500,22 @@ export class DomainErrorsShapePolicy implements ArchitecturePolicyProtocol {
       diagnostics.push(
         file.diagnostic(
           DomainErrorsShapePolicy.ruleID,
-          domainRemediationMessage(
-            "Domain/Errors files should be named after the structured error type they contain.",
-            `Rename ${file.repoRelativePath} to match the structured error type it contains, or rename the type to match the file.`,
-          ),
+          domainRemediationMessage({
+            summary: `Domain/Errors file '${file.repoRelativePath}' name does not match any structured error type it declares.`,
+            categories: [
+              "file/type name mismatch in Domain/Errors",
+              "ambiguous error file naming",
+            ],
+            signs: [
+              `file base name '${fileBaseName}' does not match any structured error type declared in the file`,
+              "file ↔ type one-to-one convention is broken inside Domain/Errors",
+            ],
+            architecturalNote:
+              "Domain/Errors uses file ↔ type one-to-one naming so the file name documents the error type and lint rules can locate the type by file path alone.",
+            destination:
+              "Domain/Errors with the file name and primary structured error type name matching.",
+            decomposition: `Rename ${file.repoRelativePath} to match the structured error type it declares, or rename the type to match the file base name.`,
+          }),
         ),
       );
     }
@@ -373,10 +539,23 @@ export class DomainErrorsShapePolicy implements ArchitecturePolicyProtocol {
         diagnostics.push(
           file.diagnostic(
             DomainErrorsShapePolicy.ruleID,
-            domainRemediationMessage(
-              "Domain/Errors should expose correctly named structured error types.",
-              `Rename or move '${declaration.name}' from ${file.repoRelativePath} so Domain/Errors contains only SharedDomainError, <Feature>Error, or <Feature>DomainError types.`,
-            ),
+            domainRemediationMessage({
+              summary: `Domain/Errors file '${file.repoRelativePath}' declares '${declaration.name}', which does not follow the structured-error naming convention.`,
+              categories: [
+                "structured error with ambiguous naming",
+                "non-error type placed under Domain/Errors",
+              ],
+              signs: [
+                `declaration '${declaration.name}' is neither SharedDomainError, <Feature>Error, nor <Feature>DomainError`,
+                "the declaration does not inherit StructuredErrorProtocol/Error/LocalizedError",
+                "Domain/Errors hosts the type but its name does not announce that it is an error",
+              ],
+              architecturalNote:
+                "Domain/Errors is reserved for structured error types whose name communicates the role; other types belong in other Domain role folders.",
+              destination:
+                "Domain/Errors only for structured errors named SharedDomainError, <Feature>Error, or <Feature>DomainError; other Domain role folders for non-error types.",
+              decomposition: `Rename '${declaration.name}' in ${file.repoRelativePath} to follow the structured-error naming convention, or move it to the Domain role folder whose naming rules match its real role.`,
+            }),
             declaration.coordinate,
           ),
         );
@@ -387,10 +566,22 @@ export class DomainErrorsShapePolicy implements ArchitecturePolicyProtocol {
         diagnostics.push(
           file.diagnostic(
             DomainErrorsShapePolicy.ruleID,
-            domainRemediationMessage(
-              "Structured domain error types must conform to StructuredErrorProtocol.",
-              `Add StructuredErrorProtocol conformance to '${declaration.name}' in ${file.repoRelativePath}.`,
-            ),
+            domainRemediationMessage({
+              summary: `Structured error '${declaration.name}' in ${file.repoRelativePath} does not conform to StructuredErrorProtocol.`,
+              categories: [
+                "structured error missing the canonical inward conformance",
+                "Domain error declared without the shared protocol contract",
+              ],
+              signs: [
+                `'${declaration.name}' looks like a structured Domain error but does not list StructuredErrorProtocol in its inherited types`,
+                "consumers cannot rely on the shared structured-error contract for '${declaration.name}'",
+              ],
+              architecturalNote:
+                "Structured Domain errors conform to StructuredErrorProtocol so consumers can read the canonical members through a single inward interface.",
+              destination:
+                "Domain/Errors with each structured error implementing StructuredErrorProtocol.",
+              decomposition: `Add StructuredErrorProtocol conformance to '${declaration.name}' in ${file.repoRelativePath} (extends/implements clause), and ensure the canonical members are exposed.`,
+            }),
             declaration.coordinate,
           ),
         );
@@ -404,10 +595,22 @@ export class DomainErrorsShapePolicy implements ArchitecturePolicyProtocol {
         diagnostics.push(
           file.diagnostic(
             DomainErrorsShapePolicy.ruleID,
-            domainRemediationMessage(
-              "Structured domain error types should expose the full required member set.",
-              `Add the missing members to '${declaration.name}' in ${file.repoRelativePath}: ${missingMemberNames.join(", ")}.`,
-            ),
+            domainRemediationMessage({
+              summary: `Structured error '${declaration.name}' in ${file.repoRelativePath} is missing required members: ${missingMemberNames.join(", ")}.`,
+              categories: [
+                "incomplete structured error surface",
+                "missing canonical structured-error members",
+              ],
+              signs: [
+                `'${declaration.name}' does not declare: ${missingMemberNames.join(", ")}`,
+                "consumers cannot rely on the canonical structured-error member set for this error",
+              ],
+              architecturalNote:
+                "Structured Domain errors expose code, message, retryable, and details so collaborators have a stable contract for diagnostics and retries.",
+              destination:
+                "Domain/Errors with each structured error declaring the full canonical member set.",
+              decomposition: `Add the missing members to '${declaration.name}' in ${file.repoRelativePath}: ${missingMemberNames.join(", ")}.`,
+            }),
             declaration.coordinate,
           ),
         );
@@ -451,10 +654,22 @@ export class DomainErrorsPlacementPolicy
       return [
         file.diagnostic(
           DomainErrorsPlacementPolicy.ruleID,
-          domainRemediationMessage(
-            "Structured domain error types must live in Domain/Errors.",
-            `Move '${declaration.name}' from ${file.repoRelativePath} into Domain/Errors.`,
-          ),
+          domainRemediationMessage({
+            summary: `Structured Domain error '${declaration.name}' is declared in ${file.repoRelativePath} instead of Domain/Errors.`,
+            categories: [
+              "structured error declared outside Domain/Errors",
+              "Domain error mixed into Entities, ValueObjects, Policies, or Protocols",
+            ],
+            signs: [
+              `'${declaration.name}' matches the structured-error shape (naming or inherited types) but lives outside Domain/Errors`,
+              "Domain/Errors should host every structured error so consumers and lint rules can locate them by path",
+            ],
+            architecturalNote:
+              "Domain organizes structured errors in a dedicated role folder so error ownership and lint coverage stay obvious.",
+            destination:
+              "Domain/Errors with one file per structured error type.",
+            decomposition: `Move '${declaration.name}' from ${file.repoRelativePath} into Domain/Errors, with a file name that matches the structured error type.`,
+          }),
           declaration.coordinate,
         ),
       ];
@@ -489,10 +704,22 @@ export class RepositoryProtocolPlacementPolicy
       return [
         file.diagnostic(
           RepositoryProtocolPlacementPolicy.ruleID,
-          domainRemediationMessage(
-            "Repository protocols belong in Domain/Protocols.",
-            `Move '${declaration.name}' from ${file.repoRelativePath} to Domain/Protocols.`,
-          ),
+          domainRemediationMessage({
+            summary: `Repository protocol '${declaration.name}' is declared in ${file.repoRelativePath} instead of Domain/Protocols.`,
+            categories: [
+              "repository protocol declared outside Domain/Protocols",
+              "inward repository abstraction misplaced in Application, Infrastructure, or Presentation",
+            ],
+            signs: [
+              `interface '${declaration.name}' ends with 'Repository' or 'RepositoryProtocol' but the file is not under Domain/Protocols`,
+              "the repository abstraction is co-located with concrete implementations or with unrelated layers",
+            ],
+            architecturalNote:
+              "Repository abstractions belong inward in Domain/Protocols so UseCases can depend on them and Infrastructure can conform from the outside.",
+            destination:
+              "Domain/Protocols for repository abstractions.",
+            decomposition: `Move '${declaration.name}' from ${file.repoRelativePath} into Domain/Protocols, and make Infrastructure repository implementations conform to it from there.`,
+          }),
           declaration.coordinate,
         ),
       ];
@@ -543,8 +770,25 @@ const STRUCTURED_ERROR_FORBIDDEN_SURFACE_TERMS = new Set([
   "workflow.md",
 ]);
 
-function domainRemediationMessage(summary: string, destination: string): string {
-  return `${summary} Destination: ${destination}`;
+function domainRemediationMessage(input: RichRemediationMessageInput): string {
+  return richRemediationMessage(input);
+}
+
+function describeLayer(layer: ArchitectureLayer): string {
+  switch (layer) {
+    case ArchitectureLayer.Application:
+      return "Application";
+    case ArchitectureLayer.Infrastructure:
+      return "Infrastructure";
+    case ArchitectureLayer.Presentation:
+      return "Presentation";
+    case ArchitectureLayer.App:
+      return "App";
+    case ArchitectureLayer.Domain:
+      return "Domain";
+    default:
+      return String(layer);
+  }
 }
 
 function structuredErrorFileBaseName(repoRelativePath: string): string {
