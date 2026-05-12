@@ -4,7 +4,7 @@ This document tracks the gap between the Swift reference linter (`More-Coin/Arch
 
 - **Swift source of truth:** `ArchitectureLinter/ArchitectureLinterRules/Sources/*.swift` (version `0.2.5`)
 - **TypeScript source of truth:** `src/domain/policies/*.ts`
-- **Last refreshed:** 2026-05-12 (v5 — Stage 4 landed)
+- **Last refreshed:** 2026-05-12 (v6 — Stage 5 landed)
 
 > **Read this section first.** Throughout this document, **registered** means "included by default in one of the policy factories" — specifically:
 > - `DefaultArchitecturePolicies.make()` for file-level architectural policies, and
@@ -19,11 +19,11 @@ This document tracks the gap between the Swift reference linter (`More-Coin/Arch
 | Side | Defined standalone policy ruleIDs in source | Registered (default) | Defined-but-not-registered |
 |------|---|---|---|
 | Swift `0.2.5` | 121 | 120 (all via `DefaultArchitecturePolicies.make()`) | 1 (`presentation.controllers.usecase_reference`, deprecated) |
-| TypeScript    | 121 | **119 total** — 117 file policies via `DefaultArchitecturePolicies.make()` + 2 project policies via `DefaultArchitecturePolicies.makeProjectPolicies()` (`SourceRootEmptyDirectoryPolicy`, `InfrastructureEmptyDirectoryPolicy`) | 2 (`ArchitectureDiagnosticOrderingPolicy`, `ArchitecturePathClassificationPolicy` — utility classifiers, not architectural rules) |
+| TypeScript    | 125 | **122 total** — 120 file policies via `DefaultArchitecturePolicies.make()` + 2 project policies via `DefaultArchitecturePolicies.makeProjectPolicies()` (`SourceRootEmptyDirectoryPolicy`, `InfrastructureEmptyDirectoryPolicy`) | 3 (`ArchitectureDiagnosticOrderingPolicy`, `ArchitecturePathClassificationPolicy` — utility classifiers; `PresentationControllersUseCaseReferencePolicy` — deprecated, mirrors Swift, exported for opt-in) |
 
 The "defined standalone policy ruleIDs" column counts the primary `ruleID` of each policy class. It excludes the secondary `surfaceRuleID` strings (`domain.errors.surface`, `application.errors.surface`) emitted by existing policies — those are catalogued in §3.9.
 
-**Registered-vs-registered parity gap (post-Stage 4):** TS is missing **7** Swift-registered ruleIDs (was 16 after Stage 3; 9 closed in Stage 4 — see §2.1). TS additionally registers 6 ruleIDs that Swift does not register (4 legitimate TS-specific extras + 1 deprecated-in-Swift rule TS still ships + 1 TS-specific Translation-structure rule). See §2.
+**Registered-vs-registered parity gap (post-Stage 5):** TS is missing **3** Swift-registered ruleIDs (was 7 after Stage 4; 4 closed in Stage 5 — see §2.1). Of the 3 remaining, 2 are implementable in Stage 6 (Infrastructure) and 1 is intentionally not applicable (the SwiftPM target-root rule). TS additionally registers 5 ruleIDs that Swift does not register (4 legitimate TS-specific extras + 1 TS-specific Translation-structure rule). The previously-noted deprecated-in-Swift rule (`presentation.controllers.usecase_reference`) is no longer registered in TS as of Stage 5 — it now correctly mirrors the Swift deprecated-but-defined stance.
 
 The brief's original "18 Swift-only" count was off-by-one against current `main`: it missed `infrastructure.repositories.role_fit`, which Swift `0.2.5` registers but TS does not.
 
@@ -31,19 +31,26 @@ The brief's original "18 Swift-only" count was off-by-one against current `main`
 
 ## 2. Diff summary (registered-vs-registered)
 
-### 2.1 Swift-registered rule IDs missing from TS — 7 (was 16; 9 closed in Stage 4)
+### 2.1 Swift-registered rule IDs missing from TS — 3 (was 7; 4 closed in Stage 5)
 
 ```
-infrastructure.repositories.role_fit                              ← surfaced in Swift 0.2.5; was missed in v1 of this matrix
-infrastructure.unknown_subdirectory
-presentation.composition_reference
-presentation.dependency_resolution
-presentation.port_protocol_reference
-presentation.usecase_reference
+infrastructure.repositories.role_fit                              ← Stage 6
+infrastructure.unknown_subdirectory                                ← Stage 6 (TS-specific equivalence; parity test only)
 tests.swiftpm_test_targets_must_point_to_repo_test_root           ← intentionally not applicable; documented in §3.4 and §6.5
 ```
 
-Effectively 6 implementable gaps remain (Stage 5 closes 4 Presentation rules; Stage 6 closes the 2 Infrastructure rules; the SwiftPM one is documented not-applicable).
+Effectively 2 implementable gaps remain (both Infrastructure, both targeted for Stage 6; the SwiftPM target-root rule is documented not-applicable).
+
+#### Closed in Stage 5 (commit `8022702`)
+
+```
+presentation.composition_reference                 ✅ PresentationCompositionReferencePolicy    (PresentationArchitecturePolicies.ts)
+presentation.dependency_resolution                 ✅ PresentationDependencyResolutionPolicy    (PresentationArchitecturePolicies.ts)
+presentation.port_protocol_reference               ✅ PresentationPortProtocolReferencePolicy   (PresentationArchitecturePolicies.ts)
+presentation.usecase_reference                     ✅ PresentationUseCaseReferencePolicy        (PresentationArchitecturePolicies.ts)
+```
+
+Plus the planned controllers-deprecation: `PresentationControllersUseCaseReferencePolicy` is no longer registered by `DefaultArchitecturePolicies.make()`. The class remains exported for manual/custom policy construction. Regression test pins that controllers fire only `presentation.usecase_reference` under the default registry.
 
 #### Closed in Stage 4 (commit `b63e5aa`)
 
@@ -165,11 +172,11 @@ Columns:
 |---|---|---|---|---|---|---|---|
 | PresentationControllerShapePolicy | `presentation.controllers.shape` | ✅ | same | ✅ | present | none | covered |
 | PresentationControllersServiceReferencePolicy | `presentation.controllers.service_reference` | ✅ | same | ✅ | present | none | covered |
-| PresentationControllersUseCaseReferencePolicy | `presentation.controllers.usecase_reference` | ⛔ defined but deprecated; **not registered** by Swift default registry | PresentationControllersUseCaseReferencePolicy | ✅ currently registered | **TS over-registers vs Swift** | When Stage 5 adds broad `presentation.usecase_reference`, **un-register** this controllers-specific policy from `DefaultArchitecturePolicies.ts` so controllers do not produce duplicate diagnostics. Optionally keep the exported class for opt-in. Document in README. | After change: regression test that controller fixtures emit `presentation.usecase_reference` only (not the controllers-specific rule); explicit test that the controllers-specific class is no longer in the default registry list. |
-| PresentationUseCaseReferencePolicy | `presentation.usecase_reference` | ✅ | — | — | **missing** | New TS class `PresentationUseCaseReferencePolicy` gated on `isPresentation` (broader than `isControllerFile`). Reuses the same UseCase-declaration check but emits under `presentation.usecase_reference`. (Stage 5) | per-presentation-file-kind violating fixtures (DTO, renderer, presenter, route, middleware, view-model, view, style, error, controller) + valid (depends on a Service) + remediation + coord + disabled-ID |
-| PresentationPortProtocolReferencePolicy | `presentation.port_protocol_reference` | ✅ | — | — | **missing** | New policy gated on `isPresentation` that flags references to declarations in `Application/Ports/Protocols`. (Stage 5) | violating + valid + remediation + coord + disabled-ID |
-| PresentationCompositionReferencePolicy | `presentation.composition_reference` | ✅ | — | — | **missing** | New policy gated on `isPresentation` that flags references to declarations whose `layer === App` or `roleFolder === AppDependencyInjection`. (Stage 5) | violating + valid + remediation + coord + disabled-ID |
-| PresentationDependencyResolutionPolicy | `presentation.dependency_resolution` | ✅ | — | — | **missing** | Implement via shared DI helper, gated on `isPresentation`. (Stage 5) | violating + valid + remediation + coord + disabled-ID |
+| PresentationControllersUseCaseReferencePolicy | `presentation.controllers.usecase_reference` | ⛔ defined but deprecated; **not registered** by Swift default registry | PresentationControllersUseCaseReferencePolicy | ⛔ **un-registered in Stage 5** (`8022702`); class still exported for opt-in | **resolved** — TS now mirrors Swift's deprecated-but-defined stance | — | regression test `controllers with a UseCase reference fire only the broad rule under the default registry` pins the dedup behavior (`tests/rules/Stage5PresentationPolicies.test.ts`) |
+| PresentationUseCaseReferencePolicy | `presentation.usecase_reference` | ✅ | PresentationUseCaseReferencePolicy | ✅ | **present** (landed Stage 5, `8022702`) | — | covered: UseCase reference in Controller flagged; UseCase reference in Renderer flagged (proves the broader gate); Application Service references allowed; disabled-ID (`tests/rules/Stage5PresentationPolicies.test.ts`) |
+| PresentationPortProtocolReferencePolicy | `presentation.port_protocol_reference` | ✅ | PresentationPortProtocolReferencePolicy | ✅ | **present** (landed Stage 5, `8022702`) | — | covered: Application port reference in Presentation flagged + disabled-ID. Uses shared `iterateReferenceOccurrences` across 8 surfaces. |
+| PresentationCompositionReferencePolicy | `presentation.composition_reference` | ✅ | PresentationCompositionReferencePolicy | ✅ | **present** (landed Stage 5, `8022702`) | — | covered: AppGraph (App layer / App/DependencyInjection role) reference in Presentation flagged + disabled-ID. |
+| PresentationDependencyResolutionPolicy | `presentation.dependency_resolution` | ✅ | PresentationDependencyResolutionPolicy | ✅ | **present** (landed Stage 5, `8022702`) | — | covered: Container.resolve flagged with precise coord; @Inject decorator flagged; non-Presentation file silent; disabled-ID. Iterates `dependencyResolutionOccurrences` (composite Stage 2 surface). |
 | PresentationControllersFunctionSeamPolicy | `presentation.controllers.function_seam` | ✅ | same | ✅ | present | none | covered |
 | PresentationRouteShapePolicy | `presentation.routes.shape` | ✅ | same | ✅ | present | none | covered |
 | PresentationDTOsShapePolicy | `presentation.dtos.shape` | ✅ | same | ✅ | present | none | covered |
@@ -230,9 +237,9 @@ Columns:
 
 ### 3.8 TypeScript-only registered rules to *remove* once parity lands
 
-| TS class | TS rule ID | Why remove |
+| TS class | TS rule ID | Status |
 |---|---|---|
-| PresentationControllersUseCaseReferencePolicy | `presentation.controllers.usecase_reference` | Swift defines this class but deprecated it and **does not register it** in `DefaultArchitecturePolicies.make()`. TS currently registers it. Once Stage 5 ships `presentation.usecase_reference` (broader, gated on all Presentation files), controllers would fire **both** rules. Remove from the TS default registry to mirror Swift behavior. Optionally keep the class exported. |
+| PresentationControllersUseCaseReferencePolicy | `presentation.controllers.usecase_reference` | **✅ resolved in Stage 5 (`8022702`).** Un-registered from `DefaultArchitecturePolicies.make()`. Class remains exported for manual/custom policy construction (callers can still build it directly), matching Swift's deprecated-but-defined stance. Regression test in `tests/rules/Stage5PresentationPolicies.test.ts` pins that controllers with a UseCase reference fire only `presentation.usecase_reference` under the default registry. |
 
 ### 3.9 TypeScript-only `surfaceRuleID` emissions (not standalone rules)
 
@@ -291,7 +298,7 @@ Each will land with its own unit test in `tests/rules/TypeScriptProjectAnalyzer.
 |---|---|---|---|
 | DomainArchitecturePolicies.ts | `domainRemediationMessage` now delegates to `richRemediationMessage` | All 16 Domain call sites rewritten to the 6-field rich format with Domain-specific categories/signs/architecturalNote/destination/decomposition. | **✅ done in Stage 3 (`f0b0db6`)** |
 | ApplicationArchitecturePolicies.ts | `applicationRemediationMessage` now delegates to `richRemediationMessage` with Application-flavored defaults | All 49 legacy terse call sites gain 5-marker output via helper delegation; new Stage 4 policies populate markers directly with hand-tailored content. An acceptance test in `tests/rules/Stage4ApplicationPolicies.test.ts` confirms a legacy call site emits all 5 markers. | **✅ done in Stage 4 (`b63e5aa`)** |
-| PresentationArchitecturePolicies.ts | `presentationRemediationMessage(summary, destination)` — terse | Rewrite all terse call sites. | Stage 5 |
+| PresentationArchitecturePolicies.ts | `presentationRemediationMessage` now delegates to `richRemediationMessage` with Presentation-flavored defaults | All 19 legacy terse call sites gain 5-marker output via helper delegation; new Stage 5 policies populate markers directly with hand-tailored content. An acceptance test in `tests/rules/Stage5PresentationPolicies.test.ts` confirms a legacy call site emits all 5 markers. | **✅ done in Stage 5 (`8022702`)** |
 | InfrastructureArchitecturePolicies.ts | `infrastructureRemediationMessage(summary, destination)` — terse (the structured one is already rich) | Rewrite all terse call sites. | Stage 6 |
 | TestArchitecturePolicies.ts | mixed | Audit each helper. Bring any terse helpers to rich format. | Stage 6 |
 | AppCompositionPolicies.ts | `appRemediationMessage(...)` — already rich | No change. Promote to shared helper signature. | Stage 2 promoted (`b0409fe`) |
@@ -341,7 +348,7 @@ Stage 6 README pass must include:
 2. **Stage 2 — shared infrastructure.** Add `constructionOccurrences`, `staticMemberAccessOccurrences`, `decoratorOccurrences`, `dependencyResolutionOccurrences` to ArchitectureFile + ts-morph extractor + tests. Add the shared `richRemediationMessage` helper. Add shared constant lists (technical-seam suffixes, ambiguous-suffix list, forbidden-UseCase-boundary list, DI base names).
 3. **Stage 3 — Domain & cross-architecture.** ✅ Complete (commit `f0b0db6`). Decided source organization (new `src/domain/policies/CrossArchitecturePolicies.ts`). Implemented `domain.dependency_resolution`, `architecture.service_role_placement`, `architecture.technical_seam_protocol_placement`. Rich-remediation pass on `DomainArchitecturePolicies.ts` — all 16 call sites now use `richRemediationMessage`. Registered in `DefaultArchitecturePolicies.ts` in Swift-matching order; `DefaultArchitecturePolicies.test.ts` expected-name list updated in the same commit. 16 new focused tests in `tests/rules/CrossArchitecturePolicies.test.ts`. `npm test` 104/104, `npm run build` clean.
 4. **Stage 4 — Application.** ✅ Complete (commit `b63e5aa`). All 9 new policies landed in `src/domain/policies/ApplicationArchitecturePolicies.ts`: `application.passive_dependency_resolution`, `application.ambiguous_role_name`, four Services rules (`port_protocol_reference`, `service_reference`, `usecase_construction`, `dependency_resolution`), three UseCases rules (`usecase_reference`, `dependency_resolution`, `boundary_type_reference`). New shared helper `src/domain/policies/shared/ReferenceOccurrences.ts` mirrors Swift's `referencedTypeOccurrences` (8-surface walk). `applicationRemediationMessage` now delegates to `richRemediationMessage` — all 49 legacy Application call sites gain 5-marker output. Registered in `DefaultArchitecturePolicies.ts`; `DefaultArchitecturePolicies.test.ts` expected-name list updated in the same commit. 20 new focused tests in `tests/rules/Stage4ApplicationPolicies.test.ts`. `npm test` 124/124, `npm run build` clean. Operation-shape and abstraction-delegation parity verification deferred to Stage 6 as part of the full-registry remediation-sampling test.
-5. **Stage 5 — Presentation.** Implement broad `presentation.usecase_reference`, `presentation.port_protocol_reference`, `presentation.composition_reference`, `presentation.dependency_resolution`. **Un-register** `PresentationControllersUseCaseReferencePolicy` from `DefaultArchitecturePolicies.ts` to mirror Swift. Add regression test that controllers emit only the broad rule. Rich-remediation pass on `PresentationArchitecturePolicies.ts`. Register the new policies. Tests.
+5. **Stage 5 — Presentation.** ✅ Complete (commit `8022702`). Implemented broad `presentation.usecase_reference`, `presentation.port_protocol_reference`, `presentation.composition_reference`, `presentation.dependency_resolution`. **Un-registered** `PresentationControllersUseCaseReferencePolicy` from `DefaultArchitecturePolicies.ts` so it mirrors Swift's deprecated-but-defined stance; the class stays exported for opt-in. Added regression test that controllers fire only the broad rule under the default registry. `presentationRemediationMessage` now delegates to `richRemediationMessage` — all 19 legacy Presentation call sites gain 5-marker output. Registered the 4 new policies in `DefaultArchitecturePolicies.ts`; `DefaultArchitecturePolicies.test.ts` expected-name list updated; `PresentationArchitecturePolicies.test.ts` rule-set-count bumped 15 → 19. 16 new focused tests in `tests/rules/Stage5PresentationPolicies.test.ts`. `npm test` 140/140, `npm run build` clean.
 6. **Stage 6 — Infrastructure / Tests / Docs final pass.** Implement `infrastructure.repositories.role_fit`. Parity test for `infrastructure.unknown_subdirectory` ↔ TS equivalence. Audit `TestArchitecturePolicies.ts` for any terse helpers. Diagnostic-remediation-parity sampling test from §6.2. README update from §6.5. Final `npm test` + `npm run build`.
 
 **Cross-stage maintenance:** update `tests/rules/DefaultArchitecturePolicies.test.ts` expected-registry-names list at the end of *each* stage that adds or removes a registered policy (Stages 3, 4, 5, 6), not only at the end. Letting the registry test drift stale across stages turns the final pass into a debugging archaeology session.
@@ -361,6 +368,7 @@ Each stage ends with green tests so the tree is never half-broken.
 
 ## 9. Change log
 
+- **v6 (2026-05-12):** Stage 5 landed (commit `8022702`). Headline counts: TS defined 121 → 125; TS registered 119 → 122 (120 file + 2 project). Registered-vs-registered gap closes 7 → 3 — effectively 2 implementable (both Infrastructure, both targeted for Stage 6) plus 1 documented-not-applicable SwiftPM rule. §2.1 adds a "Closed in Stage 5" sub-block listing the 4 new Presentation classes with file paths, and notes the `PresentationControllersUseCaseReferencePolicy` un-registration. §3.3 rows for the 5 affected Presentation policies updated. §3.8 marks the over-registered controllers rule as **resolved**: un-registered in Stage 5; class remains exported for opt-in; regression test pins single-rule firing for controllers. Defined-but-not-registered classes in §1 grow 2 → 3 to include `PresentationControllersUseCaseReferencePolicy` (deprecated stance). §6.1 marks `PresentationArchitecturePolicies.ts` ✅ done — helper delegation upgrade covers all 19 legacy call sites; acceptance test pins markers. §7 Stage 5 marked complete with commit reference and a one-paragraph summary. Header last-refreshed bumped to v6.
 - **v5 (2026-05-12):** Stage 4 landed (commit `b63e5aa`). Headline counts: TS defined 112 → 121; TS registered 110 → 119 (117 file + 2 project). Registered-vs-registered gap closes 16 → 7 (effectively 6 implementable: 4 Presentation for Stage 5, 2 Infrastructure for Stage 6; the SwiftPM target-root rule is intentionally not applicable). §2.1 adds a "Closed in Stage 4" sub-block listing the 9 new Application classes with file paths. §3.2 rows for all 9 new Application policies now show TS class + ✅ TS-registered + status `present` + test coverage notes pointing at `tests/rules/Stage4ApplicationPolicies.test.ts`. §6.1 marks `ApplicationArchitecturePolicies.ts` ✅ done — helper delegation upgrade covers all 49 legacy call sites; an acceptance test pins the markers. §7 Stage 4 marked complete with commit reference and a one-paragraph summary of what landed (including the shared `ReferenceOccurrences.ts` helper). Operation-shape / abstraction-delegation parity verification deferred to Stage 6 sampling test. Header last-refreshed bumped to v5.
 - **v4 (2026-05-12):** Stage 3 landed (commit `f0b0db6`). Headline counts updated: TS defined goes 109 → 112, TS registered goes 107 → 110 (108 file + 2 project). Registered-vs-registered gap closes 19 → 16. §2.1 lists the 16 remaining gaps and adds a "Closed in Stage 3" sub-block citing the three new classes. §3.1 rows for `DomainDependencyResolutionPolicy`, `ArchitectureServiceRolePlacementPolicy`, `TechnicalSeamProtocolPlacementPolicy` now show TS class + ✅ registered + present + test coverage notes. §6.1 promoted to a status table; `DomainArchitecturePolicies.ts` marked done; remaining files annotated with their target stage. §7 Stage 3 marked complete with the commit reference. Header last-refreshed bumped to v4.
 - **v3 (2026-05-12):** Precision-edit pass. Expanded the definition of *registered* in §1 to include `DefaultArchitecturePolicies.makeProjectPolicies()` and split the TS 107 total into 105 file policies + 2 project policies so the source of each registration is explicit. Renamed the §1 count column to "Defined standalone policy ruleIDs in source" to keep secondary `surfaceRuleID` strings (§3.9) from muddying the headline number. Rewrote the §2.3 controllers-policy note to drop the incorrect "opt-in via `disabledRuleIDs`" wording (`disabledRuleIDs` only suppresses; it cannot enable an unregistered rule). Corrected the §5 analyzer property name `nestedDeclarations` → `nestedNominalDeclarations`. Added a cross-stage maintenance line to §7 telling implementers to keep `DefaultArchitecturePolicies.test.ts` updated at the end of each stage that touches the registry, not only at the end of the parity work.
