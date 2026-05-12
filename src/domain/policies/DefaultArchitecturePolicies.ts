@@ -10,6 +10,7 @@ import {
   CompositionRootInwardReferencePolicy,
 } from "./AppCompositionPolicies.ts";
 import {
+  ApplicationAmbiguousRoleNamePolicy,
   ApplicationContractsErrorTaxonomyPolicy,
   ApplicationContractsNestedErrorPlacementPolicy,
   ApplicationContractsNoCollaboratorDependenciesPolicy,
@@ -20,17 +21,24 @@ import {
   ApplicationErrorsPlacementPolicy,
   ApplicationErrorsShapePolicy,
   ApplicationOuterLayerReferencePolicy,
+  ApplicationPassiveDependencyResolutionPolicy,
   ApplicationPortProtocolsShapePolicy,
   ApplicationProtocolPlacementPolicy,
+  ApplicationServicesDependencyResolutionPolicy,
   ApplicationServicesInfrastructureReferencePolicy,
   ApplicationServicesNoProtocolsPolicy,
   ApplicationServicesNoUseCasesPolicy,
   ApplicationServicesOrchestrationPolicy,
   ApplicationServicesPlatformAPIPolicy,
+  ApplicationServicesPortProtocolReferencePolicy,
   ApplicationServicesRepositoryReferencePolicy,
+  ApplicationServicesServiceReferencePolicy,
   ApplicationServicesShapePolicy,
   ApplicationServicesSurfacePolicy,
+  ApplicationServicesUseCaseConstructionPolicy,
   ApplicationUseCasesAbstractionDelegationPolicy,
+  ApplicationUseCasesBoundaryTypeReferencePolicy,
+  ApplicationUseCasesDependencyResolutionPolicy,
   ApplicationUseCasesInfrastructureReferencePolicy,
   ApplicationUseCasesNoProtocolsPolicy,
   ApplicationUseCasesOperationShapePolicy,
@@ -38,6 +46,7 @@ import {
   ApplicationUseCasesServiceReferencePolicy,
   ApplicationUseCasesShapePolicy,
   ApplicationUseCasesSurfacePolicy,
+  ApplicationUseCasesUseCaseReferencePolicy,
 } from "./ApplicationArchitecturePolicies.ts";
 import {
   DomainDurableStructurePolicy,
@@ -272,8 +281,16 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
     make: () => new ApplicationContractsErrorTaxonomyPolicy(),
   },
   {
+    ruleID: ApplicationPassiveDependencyResolutionPolicy.ruleID,
+    make: () => new ApplicationPassiveDependencyResolutionPolicy(),
+  },
+  {
     ruleID: ApplicationProtocolPlacementPolicy.ruleID,
     make: () => new ApplicationProtocolPlacementPolicy(),
+  },
+  {
+    ruleID: ApplicationAmbiguousRoleNamePolicy.ruleID,
+    make: () => new ApplicationAmbiguousRoleNamePolicy(),
   },
   {
     ruleID: ApplicationErrorsShapePolicy.ruleID,
@@ -290,6 +307,22 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
   {
     ruleID: ApplicationServicesNoProtocolsPolicy.ruleID,
     make: () => new ApplicationServicesNoProtocolsPolicy(),
+  },
+  {
+    ruleID: ApplicationServicesPortProtocolReferencePolicy.ruleID,
+    make: () => new ApplicationServicesPortProtocolReferencePolicy(),
+  },
+  {
+    ruleID: ApplicationServicesServiceReferencePolicy.ruleID,
+    make: () => new ApplicationServicesServiceReferencePolicy(),
+  },
+  {
+    ruleID: ApplicationServicesUseCaseConstructionPolicy.ruleID,
+    make: () => new ApplicationServicesUseCaseConstructionPolicy(),
+  },
+  {
+    ruleID: ApplicationServicesDependencyResolutionPolicy.ruleID,
+    make: () => new ApplicationServicesDependencyResolutionPolicy(),
   },
   {
     ruleID: ApplicationServicesNoUseCasesPolicy.ruleID,
@@ -310,6 +343,18 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
   {
     ruleID: ApplicationUseCasesNoProtocolsPolicy.ruleID,
     make: () => new ApplicationUseCasesNoProtocolsPolicy(),
+  },
+  {
+    ruleID: ApplicationUseCasesUseCaseReferencePolicy.ruleID,
+    make: () => new ApplicationUseCasesUseCaseReferencePolicy(),
+  },
+  {
+    ruleID: ApplicationUseCasesDependencyResolutionPolicy.ruleID,
+    make: () => new ApplicationUseCasesDependencyResolutionPolicy(),
+  },
+  {
+    ruleID: ApplicationUseCasesBoundaryTypeReferencePolicy.ruleID,
+    make: () => new ApplicationUseCasesBoundaryTypeReferencePolicy(),
   },
   {
     ruleID: ApplicationUseCasesOperationShapePolicy.ruleID,

@@ -17,6 +17,14 @@ import type { ArchitectureTypeReference } from "../ValueObjects/ArchitectureType
 import type { IndexedDeclaration } from "../ValueObjects/IndexedDeclaration.ts";
 import type { ProjectContext } from "../ValueObjects/ProjectContext.ts";
 import { RoleFolder } from "../ValueObjects/RoleFolder.ts";
+import { endsWithAmbiguousApplicationSuffix } from "./shared/AmbiguousApplicationSuffixes.ts";
+import { isForbiddenUseCaseBoundaryTypeName } from "./shared/ForbiddenUseCaseBoundaryTypes.ts";
+import {
+  canonicalReferenceTypeName,
+  iterateReferenceOccurrences,
+} from "./shared/ReferenceOccurrences.ts";
+import { richRemediationMessage } from "./shared/RichRemediationMessage.ts";
+import { endsWithTechnicalDependencySuffix } from "./shared/TechnicalSeamSuffixes.ts";
 
 export class ApplicationOuterLayerReferencePolicy
   implements ArchitecturePolicyProtocol
@@ -1704,6 +1712,532 @@ export class ApplicationServicesSurfacePolicy
   }
 }
 
+// =============================================================================
+// Stage 4 — Swift-parity Application policies (CleanArchitectureBoundaryPolicies)
+// =============================================================================
+
+/**
+ * `application.passive_dependency_resolution` — Application Contracts, Errors,
+ * and StateTransitions must stay passive and must not resolve dependencies.
+ * Mirrors Swift's `ApplicationPassiveDependencyResolutionPolicy`.
+ */
+export class ApplicationPassiveDependencyResolutionPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.passive_dependency_resolution";
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (
+      !file.classification.isApplicationContractFile &&
+      !file.classification.isApplicationErrorFile &&
+      !file.classification.isApplicationStateTransitionFile
+    ) {
+      return [];
+    }
+
+    return file.dependencyResolutionOccurrences.map((occurrence) =>
+      file.diagnostic(
+        ApplicationPassiveDependencyResolutionPolicy.ruleID,
+        richRemediationMessage({
+          summary: `Application passive file '${file.repoRelativePath}' resolves dependencies directly. Offending access: ${describeResolutionAccess(occurrence)}.`,
+          categories: [
+            "dependency-container resolution inside a passive Application shape",
+            "service-locator access in Contracts, Errors, or StateTransitions",
+            "singleton dependency access on a passive Application surface",
+          ],
+          signs: [
+            "Application Contracts, Errors, or StateTransitions file references Container, ServiceLocator, DependencyContainer, Resolver, Registry, Injector, AppGraph, Dependencies, or DependencyValues",
+            "a static member like .resolve/.get/.register/.shared/.default/.live appears on a passive Application type",
+            "@Inject, @Injected, @Dependency, or @Provided decorates a passive Application declaration",
+          ],
+          architecturalNote:
+            "Application Contracts, Errors, and StateTransitions are passive shapes; operation behavior with dependencies belongs in Application/UseCases, and resolution belongs in App/DependencyInjection.",
+          destination:
+            "App/DependencyInjection for resolution and Application/UseCases for seam-backed operation behavior.",
+          decomposition:
+            "Move dependency resolution to App/DependencyInjection. Move any seam-backed operation body to an Application/UseCase. Keep passive Application types free of containers, service locators, and singleton dependency access.",
+        }),
+        occurrence.coordinate,
+      ),
+    );
+  }
+}
+
+/**
+ * `application.ambiguous_role_name` — top-level Application types using
+ * ambiguous architectural suffixes (Manager/Helper/Provider/Client/Coordinator
+ * /Adapter/Repository/Gateway) without a role-clarifying placement. Mirrors
+ * Swift's `ApplicationAmbiguousRoleNamePolicy`.
+ */
+export class ApplicationAmbiguousRoleNamePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.ambiguous_role_name";
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isApplication) {
+      return [];
+    }
+
+    return file.topLevelDeclarations.flatMap((declaration) => {
+      if (!isAmbiguousApplicationDeclaration(declaration, file)) {
+        return [];
+      }
+
+      return [
+        file.diagnostic(
+          ApplicationAmbiguousRoleNamePolicy.ruleID,
+          richRemediationMessage({
+            summary: `Application type '${declaration.name}' uses an ambiguous architectural suffix in ${file.repoRelativePath}.`,
+            categories: [
+              "workflow orchestration hiding behind a vague role (Manager/Coordinator/Helper)",
+              "single application operation with unclear naming",
+              "technical seam or concrete boundary behavior in Application",
+            ],
+            signs: [
+              "Manager, Coordinator, or Helper names a type that coordinates decisions without naming the Application service role",
+              "one command-like behavior is named as a generic helper instead of a use case",
+              "Provider, Client, Adapter, Repository, or Gateway appears as a concrete Application type",
+            ],
+            architecturalNote:
+              "Application orchestration is explicit (Service), focused operations live in UseCases, and protocols live inward in Application/Ports/Protocols while concrete IO lives outward in Infrastructure.",
+            destination:
+              "Application/Services for orchestration, Application/UseCases for single operations, Application/Ports/Protocols for seams, Infrastructure for implementations, or Presentation for state/formatting.",
+            decomposition: `Decide what '${declaration.name}' actually does: if it orchestrates UseCases, rename and move it to Application/Services; if it expresses one operation, rename and move it to Application/UseCases; if it is a technical seam, rename it to a PortProtocol/Interface/Port form in Application/Ports/Protocols; if it is concrete boundary behavior, move it to Infrastructure with Repository/Gateway/Client/Adapter/Provider naming; if it is presentation state, move it to Presentation.`,
+          }),
+          declaration.coordinate,
+        ),
+      ];
+    });
+  }
+}
+
+/**
+ * `application.services.port_protocol_reference` — Application Services
+ * orchestrate UseCases; direct references to ports, repositories, gateways,
+ * clients, adapters, providers, or concrete Infrastructure types are
+ * forbidden. Mirrors Swift's `ApplicationServicesPortProtocolReferencePolicy`.
+ */
+export class ApplicationServicesPortProtocolReferencePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.services.port_protocol_reference";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isApplicationServiceFile) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenNames = new Set<string>();
+
+    for (const occurrence of iterateReferenceOccurrences(file)) {
+      if (seenNames.has(occurrence.name)) {
+        continue;
+      }
+      seenNames.add(occurrence.name);
+
+      const declaration = context.uniqueDeclaration(occurrence.name);
+      if (!isForbiddenApplicationServiceDependency(occurrence.name, declaration)) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          ApplicationServicesPortProtocolReferencePolicy.ruleID,
+          richRemediationMessage({
+            summary: `Application Service directly references technical dependency '${occurrence.name}'${declaration ? ` from ${declaration.repoRelativePath}` : ""}.`,
+            categories: [
+              "direct port or protocol invocation from a Service",
+              "concrete Infrastructure dependency in a Service",
+              "workflow operation body embedded in a Service",
+            ],
+            signs: [
+              "stored property, constructor parameter, method parameter, return type, construction, or static access names a PortProtocol/Interface/Port, Repository, Gateway, Client, Adapter, or Provider",
+              "Infrastructure, persistence, fetch, network, storage, vendor, platform, service locator, DI container, or singleton access appears in the Service",
+            ],
+            architecturalNote:
+              "Application Services orchestrate UseCases and must not call protocols, repositories, gateways, clients, adapters, or providers directly.",
+            destination:
+              "Application/UseCases for port/protocol invocation and App/DependencyInjection for concrete construction.",
+            decomposition: `Extract the port/protocol invocation that uses '${occurrence.name}' into an Application UseCase. Inject the UseCase into the Service. Let the Service orchestrate UseCases only.`,
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
+/**
+ * `application.services.service_reference` — Application Services must not
+ * depend on other Application Services. Mirrors Swift's
+ * `ApplicationServicesServiceReferencePolicy`.
+ */
+export class ApplicationServicesServiceReferencePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.services.service_reference";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isApplicationServiceFile) {
+      return [];
+    }
+
+    const localServiceNames = new Set(
+      file.topLevelDeclarations.map((declaration) => declaration.name),
+    );
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenNames = new Set<string>();
+
+    for (const occurrence of iterateReferenceOccurrences(file)) {
+      if (localServiceNames.has(occurrence.name)) {
+        continue;
+      }
+      if (seenNames.has(occurrence.name)) {
+        continue;
+      }
+      seenNames.add(occurrence.name);
+
+      const declaration = context.uniqueDeclaration(occurrence.name);
+      if (!declaration || declaration.roleFolder !== RoleFolder.ApplicationServices) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          ApplicationServicesServiceReferencePolicy.ruleID,
+          richRemediationMessage({
+            summary: `Application Service '${file.classification.fileStem}' references another Application Service '${occurrence.name}' from ${declaration.repoRelativePath}.`,
+            categories: [
+              "service-to-service dependency",
+              "workflow orchestration chained through another Service",
+              "broad operation sequencing hidden behind a Service collaborator",
+            ],
+            signs: [
+              "stored property, constructor parameter, method parameter, return type, construction, or static access names another Application Service",
+              "Service code invokes another Service instead of focused UseCases",
+            ],
+            architecturalNote:
+              "Application Services orchestrate focused UseCases; chaining Services through Services hides operation boundaries.",
+            destination:
+              "Application/Services coordinating Application/UseCases directly.",
+            decomposition: `Split the workflow so '${file.classification.fileStem}' orchestrates focused UseCases rather than depending on another Service. If shared work exists, extract it into a UseCase and inject that UseCase into each Service that needs it.`,
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
+/**
+ * `application.services.usecase_construction` — Application Services receive
+ * UseCases as dependencies; they must not construct them with `new`. Mirrors
+ * Swift's `ApplicationServicesUseCaseConstructionPolicy`. Requires the
+ * `constructionOccurrences` analyzer surface added in Stage 2.
+ */
+export class ApplicationServicesUseCaseConstructionPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.services.usecase_construction";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isApplicationServiceFile) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenKeys = new Set<string>();
+
+    for (const occurrence of file.constructionOccurrences) {
+      const typeName = canonicalReferenceTypeName(occurrence.typeName);
+      const key = `${typeName}:${occurrence.coordinate.line}:${occurrence.coordinate.column}`;
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+
+      const declaration = context.uniqueDeclaration(typeName);
+      if (!declaration || declaration.roleFolder !== RoleFolder.ApplicationUseCases) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          ApplicationServicesUseCaseConstructionPolicy.ruleID,
+          richRemediationMessage({
+            summary: `Application Service constructs UseCase '${typeName}' from ${declaration.repoRelativePath}.`,
+            categories: [
+              "UseCase constructed inside an Application Service",
+              "composition-root responsibility embedded in workflow orchestration",
+              "inline UseCase construction followed by invocation",
+            ],
+            signs: [
+              `Service body contains 'new ${typeName}(...)' or an inferred property/local initialised with it`,
+              "Service stores or instantiates a UseCase rather than receiving it through the constructor",
+            ],
+            architecturalNote:
+              "Application Services orchestrate injected UseCases; App/DependencyInjection wires UseCases. Constructing a UseCase inside a Service hides composition responsibility.",
+            destination:
+              "App/DependencyInjection constructs UseCases and injects them into Application/Services.",
+            decomposition: `Move construction of '${typeName}' to App/DependencyInjection and inject the UseCase into the Application Service via its constructor.`,
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
+/**
+ * `application.services.dependency_resolution` — Application Services must
+ * not use service locators, dependency containers, singleton dependency
+ * access, decorator-mediated injection, or framework DI helpers. Mirrors
+ * Swift's `ApplicationServicesDependencyResolutionPolicy`.
+ */
+export class ApplicationServicesDependencyResolutionPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.services.dependency_resolution";
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isApplicationServiceFile) {
+      return [];
+    }
+
+    return file.dependencyResolutionOccurrences.map((occurrence) =>
+      file.diagnostic(
+        ApplicationServicesDependencyResolutionPolicy.ruleID,
+        richRemediationMessage({
+          summary: `Application Service file '${file.repoRelativePath}' resolves dependencies or accesses singleton dependencies directly. Offending access: ${describeResolutionAccess(occurrence)}.`,
+          categories: [
+            "service-locator or dependency-container resolution inside a Service",
+            "static dependency-registry access from a Service",
+            "decorator-mediated injection on a Service",
+          ],
+          signs: [
+            "Service references Container, ServiceLocator, DependencyContainer, Resolver, Registry, Injector, AppGraph, Dependencies, or DependencyValues",
+            "a static member such as .resolve/.get/.register/.shared/.default/.live appears on a dependency-shaped type inside a Service",
+            "@Inject, @Injected, @Dependency, or @Provided decorates a Service or its members",
+          ],
+          architecturalNote:
+            "Application Services orchestrate UseCases and must not use service locators, dependency containers, static dependency registries, decorator-mediated injection, or singleton dependency access.",
+          destination:
+            "App/DependencyInjection for concrete construction; Application/UseCases for port/protocol invocation.",
+          decomposition:
+            "Move concrete dependency construction to App/DependencyInjection. Inject the UseCase into the Application Service via its constructor. Extract any port/protocol invocation into an Application UseCase. Keep the Service as a workflow coordinator only.",
+        }),
+        occurrence.coordinate,
+      ),
+    );
+  }
+}
+
+/**
+ * `application.usecases.usecase_reference` — UseCases must not depend on
+ * other UseCases. Sequencing belongs in Application/Services. Mirrors Swift's
+ * `ApplicationUseCasesUseCaseReferencePolicy`.
+ */
+export class ApplicationUseCasesUseCaseReferencePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.usecases.usecase_reference";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isApplicationUseCaseFile) {
+      return [];
+    }
+
+    const localUseCaseNames = new Set(
+      file.topLevelDeclarations.map((declaration) => declaration.name),
+    );
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenNames = new Set<string>();
+
+    for (const occurrence of iterateReferenceOccurrences(file)) {
+      if (localUseCaseNames.has(occurrence.name)) {
+        continue;
+      }
+      if (seenNames.has(occurrence.name)) {
+        continue;
+      }
+      seenNames.add(occurrence.name);
+
+      const declaration = context.uniqueDeclaration(occurrence.name);
+      if (!declaration || declaration.roleFolder !== RoleFolder.ApplicationUseCases) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          ApplicationUseCasesUseCaseReferencePolicy.ruleID,
+          richRemediationMessage({
+            summary: `Application UseCase '${file.classification.fileStem}' references another UseCase '${occurrence.name}' from ${declaration.repoRelativePath}.`,
+            categories: [
+              "multi-use-case sequencing",
+              "inline construction or invocation of another UseCase",
+              "misplaced workflow orchestration",
+            ],
+            signs: [
+              "stored property, constructor parameter, method parameter, return type, or construction names another UseCase",
+              "retry, validation flow, conditional dispatch, reconciliation, or multi-step ordering appears around another UseCase",
+            ],
+            architecturalNote:
+              "Direction must be Application Service → UseCase, not UseCase → UseCase. UseCases focus on a single application operation.",
+            destination: "Application/Services.",
+            decomposition: `Move sequencing/orchestration around '${occurrence.name}' into an Application/Service, inject each focused UseCase into that Service, and keep each UseCase focused on one application operation.`,
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
+/**
+ * `application.usecases.dependency_resolution` — UseCases invoke injected
+ * inner-layer protocols/interfaces; direct resolution via containers,
+ * service locators, singletons, or DI decorators is forbidden. Mirrors
+ * Swift's `ApplicationUseCasesDependencyResolutionPolicy`.
+ */
+export class ApplicationUseCasesDependencyResolutionPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.usecases.dependency_resolution";
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isApplicationUseCaseFile) {
+      return [];
+    }
+
+    return file.dependencyResolutionOccurrences.map((occurrence) =>
+      file.diagnostic(
+        ApplicationUseCasesDependencyResolutionPolicy.ruleID,
+        richRemediationMessage({
+          summary: `Application UseCase file '${file.repoRelativePath}' resolves dependencies or accesses singleton dependencies directly. Offending access: ${describeResolutionAccess(occurrence)}.`,
+          categories: [
+            "service-locator or dependency-container resolution inside a UseCase",
+            "static dependency-registry access from a UseCase",
+            "decorator-mediated injection on a UseCase",
+          ],
+          signs: [
+            "UseCase references Container, ServiceLocator, DependencyContainer, Resolver, Registry, Injector, AppGraph, Dependencies, or DependencyValues",
+            "a static member such as .resolve/.get/.register/.shared/.default/.live appears on a dependency-shaped type inside a UseCase",
+            "@Inject, @Injected, @Dependency, or @Provided decorates a UseCase or its members",
+          ],
+          architecturalNote:
+            "UseCases invoke injected Application/Ports/Protocols or Domain/Protocols and must not use service locators, dependency containers, static dependency registries, decorator-mediated injection, or singleton dependency access.",
+          destination:
+            "App/DependencyInjection for resolution; Application/Ports/Protocols or Domain/Protocols for seams; Infrastructure for concrete implementations.",
+          decomposition:
+            "Move dependency resolution to App/DependencyInjection. Depend on Application/Ports/Protocols or Domain/Protocols inside the UseCase. Wire the concrete Infrastructure implementation in the composition root. Keep the UseCase focused on one operation.",
+        }),
+        occurrence.coordinate,
+      ),
+    );
+  }
+}
+
+/**
+ * `application.usecases.boundary_type_reference` — UseCase surfaces must not
+ * reference outer-layer DTOs, Infrastructure DTOs, translation models,
+ * concrete Infrastructure types, App-composition types, or platform request/
+ * response types. Mirrors Swift's
+ * `ApplicationUseCasesBoundaryTypeReferencePolicy`.
+ */
+export class ApplicationUseCasesBoundaryTypeReferencePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.usecases.boundary_type_reference";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isApplicationUseCaseFile) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenNames = new Set<string>();
+
+    for (const occurrence of iterateReferenceOccurrences(file)) {
+      if (seenNames.has(occurrence.name)) {
+        continue;
+      }
+      seenNames.add(occurrence.name);
+
+      const platformFlag = isForbiddenUseCaseBoundaryTypeName(occurrence.name);
+      const declaration = context.uniqueDeclaration(occurrence.name);
+      const layerFlag = declaration && isForbiddenUseCaseBoundaryLayer(declaration.layer);
+
+      if (!platformFlag && !layerFlag) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          ApplicationUseCasesBoundaryTypeReferencePolicy.ruleID,
+          richRemediationMessage({
+            summary: `Application UseCase references outer-layer, concrete, or platform type '${occurrence.name}'${declaration ? ` from ${declaration.repoRelativePath}` : ""}.`,
+            categories: [
+              "outer DTO or translation model leak in a UseCase surface",
+              "concrete Infrastructure dependency on a UseCase boundary",
+              "App composition or platform/transport type on a UseCase boundary",
+            ],
+            signs: [
+              "Presentation DTO, Infrastructure DTO, Infrastructure translation model, request/response carrier, or App composition type appears in a UseCase input or output",
+              "Node/browser/Express/Next transport (Request, Response, Headers, URL, Buffer, IncomingMessage, ServerResponse, NextRequest, NextResponse) appears on the UseCase surface",
+              "service locator, DI container, resolver, registry, or injector type appears on the UseCase surface",
+            ],
+            architecturalNote:
+              "UseCases accept and return Domain and Application types (entities, value objects, contracts); seams are reached through Application/Ports/Protocols or Domain/Protocols; concrete Infrastructure and App composition types stay outside the UseCase boundary.",
+            destination:
+              "Domain or Application/Contracts for boundary data; Application/Ports/Protocols or Domain/Protocols for seams; Infrastructure implementations wired by App/DependencyInjection.",
+            decomposition: `Replace '${occurrence.name}' on the UseCase surface with a Domain type or Application Contract. If it expressed a seam, depend on an inner-layer protocol/interface. Move concrete Infrastructure, Presentation DTOs, Infrastructure DTOs, translation models, App composition types, and platform transport types out of the UseCase surface.`,
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
 export function makeApplicationArchitecturePolicies(): readonly ArchitecturePolicyProtocol[] {
   return [
     new ApplicationOuterLayerReferencePolicy(),
@@ -1715,14 +2249,23 @@ export function makeApplicationArchitecturePolicies(): readonly ArchitecturePoli
     new ApplicationContractsOwnershipPolicy(),
     new ApplicationContractsNoStateTransitionSurfacePolicy(),
     new ApplicationContractsErrorTaxonomyPolicy(),
+    new ApplicationPassiveDependencyResolutionPolicy(),
     new ApplicationProtocolPlacementPolicy(),
+    new ApplicationAmbiguousRoleNamePolicy(),
     new ApplicationErrorsShapePolicy(),
     new ApplicationErrorsPlacementPolicy(),
     new ApplicationServicesNoProtocolsPolicy(),
     new ApplicationServicesShapePolicy(),
+    new ApplicationServicesPortProtocolReferencePolicy(),
+    new ApplicationServicesServiceReferencePolicy(),
+    new ApplicationServicesUseCaseConstructionPolicy(),
+    new ApplicationServicesDependencyResolutionPolicy(),
     new ApplicationServicesNoUseCasesPolicy(),
     new ApplicationUseCasesShapePolicy(),
     new ApplicationUseCasesNoProtocolsPolicy(),
+    new ApplicationUseCasesUseCaseReferencePolicy(),
+    new ApplicationUseCasesDependencyResolutionPolicy(),
+    new ApplicationUseCasesBoundaryTypeReferencePolicy(),
     new ApplicationUseCasesOperationShapePolicy(),
     new ApplicationUseCasesAbstractionDelegationPolicy(),
     new ApplicationUseCasesSurfacePolicy(),
@@ -1936,11 +2479,38 @@ function applicationContractOwnershipMessage(
   );
 }
 
+/**
+ * Lift the historic terse `applicationRemediationMessage(summary, destination)`
+ * helper into the Swift-parity rich format (5 canonical markers). New Stage 4
+ * Application policies populate the markers directly through
+ * `richRemediationMessage`; legacy call sites in this file delegate through
+ * this helper so every Application diagnostic exposes Likely categories,
+ * signs, architectural note, destination, and explicit decomposition guidance
+ * without requiring 49 individual call-site rewrites.
+ *
+ * Sites that want hand-tailored, context-specific markers should call
+ * `richRemediationMessage` directly. Sites that route through this helper
+ * keep the Application-layer-flavored defaults below.
+ *
+ * Acceptance criterion: PARITY.md §6.2.
+ */
 function applicationRemediationMessage(
   summary: string,
   destination: string,
 ): string {
-  return `${summary} Destination: ${destination}`;
+  return richRemediationMessage({
+    summary,
+    categories: [
+      "Application-layer boundary, role, or surface violation",
+    ],
+    signs: [
+      "the file is classified under Application but does not satisfy the rule's expected shape, placement, or surface",
+    ],
+    architecturalNote:
+      "Application orchestrates UseCases through Services and exposes passive Contracts/Errors/StateTransitions; boundary, role, and surface rules keep that organization legible to consumers and to the linter.",
+    destination,
+    decomposition: `Follow the destination guidance: ${destination}`,
+  });
 }
 
 function attachedApplicationContractDeclaration(
@@ -3345,4 +3915,104 @@ function referenceLayerDiagnostics(
 
 function isSubset<T>(subset: ReadonlySet<T>, superset: ReadonlySet<T>): boolean {
   return [...subset].every((value) => superset.has(value));
+}
+
+// -----------------------------------------------------------------------------
+// Stage 4 private helpers
+// -----------------------------------------------------------------------------
+
+function describeResolutionAccess(occurrence: {
+  readonly baseName: string;
+  readonly memberName?: string;
+}): string {
+  if (occurrence.memberName === undefined) {
+    return `@${occurrence.baseName}`;
+  }
+  return `${occurrence.baseName}.${occurrence.memberName}`;
+}
+
+function isAmbiguousApplicationDeclaration(
+  declaration: ArchitectureTopLevelDeclaration,
+  file: ArchitectureFile,
+): boolean {
+  // Role-correct suffixes inside their owning role folder are not ambiguous.
+  if (
+    file.classification.isApplicationPortProtocolFile &&
+    declaration.kind === NominalKind.Protocol &&
+    declaration.name.endsWith("PortProtocol")
+  ) {
+    return false;
+  }
+  if (
+    file.classification.isApplicationServiceFile &&
+    declaration.name.endsWith("Service")
+  ) {
+    return false;
+  }
+  if (
+    file.classification.isApplicationUseCaseFile &&
+    declaration.name.endsWith("UseCase")
+  ) {
+    return false;
+  }
+  if (
+    file.classification.isApplicationContractFile &&
+    declaration.name.endsWith("Contract")
+  ) {
+    return false;
+  }
+
+  return endsWithAmbiguousApplicationSuffix(declaration.name);
+}
+
+/**
+ * Decision predicate for `application.services.port_protocol_reference`.
+ * Mirrors Swift's `isForbiddenApplicationServiceDependency`:
+ *
+ *   - Names matching the technical-dependency suffix list are forbidden
+ *     *unless* they resolve to an Application/UseCases declaration.
+ *   - Application/Ports/Protocols declarations are always forbidden.
+ *   - Domain/Protocols declarations that also look technical (Repository/
+ *     Gateway/Client/Adapter/Provider/Port*) are forbidden.
+ *   - Any declaration in the Infrastructure layer is forbidden.
+ *
+ * A Service may freely reference UseCases, Application Contracts/Errors/
+ * StateTransitions, Domain types, and other non-dependency Application types.
+ */
+function isForbiddenApplicationServiceDependency(
+  name: string,
+  declaration: IndexedDeclaration | undefined,
+): boolean {
+  if (
+    endsWithTechnicalDependencySuffix(name) &&
+    declaration?.roleFolder !== RoleFolder.ApplicationUseCases
+  ) {
+    return true;
+  }
+
+  if (!declaration) {
+    return false;
+  }
+
+  if (declaration.roleFolder === RoleFolder.ApplicationPortsProtocols) {
+    return true;
+  }
+
+  if (
+    declaration.kind === NominalKind.Protocol &&
+    declaration.roleFolder === RoleFolder.DomainProtocols &&
+    endsWithTechnicalDependencySuffix(declaration.name)
+  ) {
+    return true;
+  }
+
+  return declaration.layer === ArchitectureLayer.Infrastructure;
+}
+
+function isForbiddenUseCaseBoundaryLayer(layer: ArchitectureLayer): boolean {
+  return (
+    layer === ArchitectureLayer.Presentation ||
+    layer === ArchitectureLayer.Infrastructure ||
+    layer === ArchitectureLayer.App
+  );
 }
