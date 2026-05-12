@@ -1,5 +1,8 @@
 import type { ArchitectureComputedPropertyDeclaration } from "./ArchitectureComputedPropertyDeclaration.ts";
+import type { ArchitectureConstructionOccurrence } from "./ArchitectureConstructionOccurrence.ts";
 import type { ArchitectureConstructorDeclaration } from "./ArchitectureConstructorDeclaration.ts";
+import type { ArchitectureDecoratorOccurrence } from "./ArchitectureDecoratorOccurrence.ts";
+import type { ArchitectureDependencyResolutionOccurrence } from "./ArchitectureDependencyResolutionOccurrence.ts";
 import type { ArchitectureDiagnostic } from "./ArchitectureDiagnostic.ts";
 import type { ArchitectureFunctionTypeOccurrence } from "./ArchitectureFunctionTypeOccurrence.ts";
 import type { ArchitectureIdentifierOccurrence } from "./ArchitectureIdentifierOccurrence.ts";
@@ -8,6 +11,7 @@ import type { ArchitectureMemberCallOccurrence } from "./ArchitectureMemberCallO
 import type { ArchitectureMethodDeclaration } from "./ArchitectureMethodDeclaration.ts";
 import type { ArchitectureNestedNominalDeclaration } from "./ArchitectureNestedNominalDeclaration.ts";
 import type { ArchitectureOperationalUseOccurrence } from "./ArchitectureOperationalUseOccurrence.ts";
+import type { ArchitectureStaticMemberAccessOccurrence } from "./ArchitectureStaticMemberAccessOccurrence.ts";
 import type { ArchitectureStoredMemberDeclaration } from "./ArchitectureStoredMemberDeclaration.ts";
 import type { ArchitectureStringLiteralOccurrence } from "./ArchitectureStringLiteralOccurrence.ts";
 import type { ArchitectureTopLevelDeclaration } from "./ArchitectureTopLevelDeclaration.ts";
@@ -35,6 +39,10 @@ export interface ArchitectureFileInput {
   readonly topLevelDeclarations?: readonly ArchitectureTopLevelDeclaration[];
   readonly topLevelValueDeclarations?: readonly ArchitectureTopLevelValueDeclaration[];
   readonly nestedNominalDeclarations?: readonly ArchitectureNestedNominalDeclaration[];
+  readonly constructionOccurrences?: readonly ArchitectureConstructionOccurrence[];
+  readonly staticMemberAccessOccurrences?: readonly ArchitectureStaticMemberAccessOccurrence[];
+  readonly decoratorOccurrences?: readonly ArchitectureDecoratorOccurrence[];
+  readonly dependencyResolutionOccurrences?: readonly ArchitectureDependencyResolutionOccurrence[];
 }
 
 export class ArchitectureFile {
@@ -55,6 +63,10 @@ export class ArchitectureFile {
   readonly topLevelDeclarations: readonly ArchitectureTopLevelDeclaration[];
   readonly topLevelValueDeclarations: readonly ArchitectureTopLevelValueDeclaration[];
   readonly nestedNominalDeclarations: readonly ArchitectureNestedNominalDeclaration[];
+  readonly constructionOccurrences: readonly ArchitectureConstructionOccurrence[];
+  readonly staticMemberAccessOccurrences: readonly ArchitectureStaticMemberAccessOccurrence[];
+  readonly decoratorOccurrences: readonly ArchitectureDecoratorOccurrence[];
+  readonly dependencyResolutionOccurrences: readonly ArchitectureDependencyResolutionOccurrence[];
 
   constructor(input: ArchitectureFileInput) {
     this.repoRelativePath = input.repoRelativePath;
@@ -78,6 +90,14 @@ export class ArchitectureFile {
       ...(input.topLevelValueDeclarations ?? []),
     ];
     this.nestedNominalDeclarations = [...(input.nestedNominalDeclarations ?? [])];
+    this.constructionOccurrences = [...(input.constructionOccurrences ?? [])];
+    this.staticMemberAccessOccurrences = [
+      ...(input.staticMemberAccessOccurrences ?? []),
+    ];
+    this.decoratorOccurrences = [...(input.decoratorOccurrences ?? [])];
+    this.dependencyResolutionOccurrences = [
+      ...(input.dependencyResolutionOccurrences ?? []),
+    ];
   }
 
   diagnostic(

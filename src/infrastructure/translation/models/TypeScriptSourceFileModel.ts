@@ -18,8 +18,16 @@ import {
 } from "ts-morph";
 
 import { ArchitecturePathClassificationPolicy } from "../../../Domain/Policies/ArchitecturePathClassificationPolicy.ts";
+import {
+  isDependencyResolutionAccess,
+  isDependencyResolutionDecoratorName,
+} from "../../../Domain/Policies/shared/DependencyResolutionDetection.ts";
+import type { ArchitectureConstructionOccurrence } from "../../../Domain/ValueObjects/ArchitectureConstructionOccurrence.ts";
+import type { ArchitectureDecoratorOccurrence } from "../../../Domain/ValueObjects/ArchitectureDecoratorOccurrence.ts";
+import type { ArchitectureDependencyResolutionOccurrence } from "../../../Domain/ValueObjects/ArchitectureDependencyResolutionOccurrence.ts";
 import { ArchitectureFile } from "../../../Domain/ValueObjects/ArchitectureFile.ts";
 import type { ArchitectureLinterConfiguration } from "../../../Domain/ValueObjects/ArchitectureLinterConfiguration.ts";
+import type { ArchitectureStaticMemberAccessOccurrence } from "../../../Domain/ValueObjects/ArchitectureStaticMemberAccessOccurrence.ts";
 import type { ArchitectureTopLevelValueDeclarationKind } from "../../../Domain/ValueObjects/ArchitectureTopLevelValueDeclaration.ts";
 import { NominalKind } from "../../../Domain/ValueObjects/NominalKind.ts";
 import type { SourceCoordinate } from "../../../Domain/ValueObjects/SourceCoordinate.ts";
@@ -92,6 +100,15 @@ export class TypeScriptSourceFileModel {
       memberCallOccurrences,
       operationalUseOccurrences,
     } = this.collectCallOccurrences(sourceFile);
+    const constructionOccurrences = this.collectConstructionOccurrences(sourceFile);
+    const staticMemberAccessOccurrences =
+      this.collectStaticMemberAccessOccurrences(sourceFile);
+    const decoratorOccurrences = this.collectDecoratorOccurrences(sourceFile);
+    const dependencyResolutionOccurrences = this.collectDependencyResolutionOccurrences({
+      memberCallOccurrences,
+      staticMemberAccessOccurrences,
+      decoratorOccurrences,
+    });
 
     return new ArchitectureFile({
       repoRelativePath,
@@ -128,6 +145,10 @@ export class TypeScriptSourceFileModel {
       topLevelDeclarations,
       topLevelValueDeclarations,
       nestedNominalDeclarations: [],
+      constructionOccurrences,
+      staticMemberAccessOccurrences,
+      decoratorOccurrences,
+      dependencyResolutionOccurrences,
     });
   }
 
@@ -426,6 +447,169 @@ export class TypeScriptSourceFileModel {
     }
 
     return { memberCallOccurrences, operationalUseOccurrences };
+  }
+
+  private collectConstructionOccurrences(
+    sourceFile: SourceFile,
+  ): readonly ArchitectureConstructionOccurrence[] {
+    const occurrences: ArchitectureConstructionOccurrence[] = [];
+    const seen = new Set<string>();
+
+    for (const newExpression of sourceFile.getDescendantsOfKind(
+      SyntaxKind.NewExpression,
+    )) {
+      const constructedText = newExpression.getExpression().getText();
+      const [typeName] = this.extractTypeNamesFromText(constructedText);
+      if (!typeName) {
+        continue;
+      }
+
+      const coordinate = coordinateFor(newExpression);
+      const key = `${typeName}:${coordinate.line}:${coordinate.column}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+
+      occurrences.push({ typeName, coordinate });
+    }
+
+    return occurrences;
+  }
+
+  private collectStaticMemberAccessOccurrences(
+    sourceFile: SourceFile,
+  ): readonly ArchitectureStaticMemberAccessOccurrence[] {
+    const occurrences: ArchitectureStaticMemberAccessOccurrence[] = [];
+    const seen = new Set<string>();
+
+    for (const node of sourceFile.getDescendantsOfKind(
+      SyntaxKind.PropertyAccessExpression,
+    )) {
+      const baseExpression = node.getExpression();
+      if (!Node.isIdentifier(baseExpression)) {
+        continue;
+      }
+
+      const baseName = baseExpression.getText();
+      if (!isCapitalizedIdentifier(baseName)) {
+        continue;
+      }
+
+      // Skip the property-access node when it is the callee of a CallExpression
+      // (e.g. `Container.resolve(Foo)` — the call form is already captured by
+      // `memberCallOccurrences`). Standalone accesses such as `Foo.shared`
+      // remain in scope.
+      const parent = node.getParent();
+      if (
+        parent &&
+        Node.isCallExpression(parent) &&
+        parent.getExpression() === node
+      ) {
+        continue;
+      }
+
+      const memberName = node.getName();
+      const coordinate = coordinateFor(node);
+      const key = `${baseName}.${memberName}:${coordinate.line}:${coordinate.column}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+
+      occurrences.push({ baseName, memberName, coordinate });
+    }
+
+    return occurrences;
+  }
+
+  private collectDecoratorOccurrences(
+    sourceFile: SourceFile,
+  ): readonly ArchitectureDecoratorOccurrence[] {
+    const occurrences: ArchitectureDecoratorOccurrence[] = [];
+    const seen = new Set<string>();
+
+    for (const decorator of sourceFile.getDescendantsOfKind(
+      SyntaxKind.Decorator,
+    )) {
+      const expression = decorator.getExpression();
+      const text = Node.isCallExpression(expression)
+        ? expression.getExpression().getText()
+        : expression.getText();
+      // Pick the trailing identifier from `@foo.bar` style decorators
+      // and from plain `@Inject`.
+      const segments = text.split(".");
+      const name = segments[segments.length - 1] ?? "";
+      if (!name) {
+        continue;
+      }
+
+      const coordinate = coordinateFor(decorator);
+      const key = `${name}:${coordinate.line}:${coordinate.column}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+
+      occurrences.push({ name, coordinate });
+    }
+
+    return occurrences;
+  }
+
+  private collectDependencyResolutionOccurrences(input: {
+    readonly memberCallOccurrences: readonly {
+      readonly baseName: string;
+      readonly memberName: string;
+      readonly coordinate: SourceCoordinate;
+    }[];
+    readonly staticMemberAccessOccurrences: readonly ArchitectureStaticMemberAccessOccurrence[];
+    readonly decoratorOccurrences: readonly ArchitectureDecoratorOccurrence[];
+  }): readonly ArchitectureDependencyResolutionOccurrence[] {
+    const occurrences: ArchitectureDependencyResolutionOccurrence[] = [];
+    const seen = new Set<string>();
+
+    const push = (
+      occurrence: ArchitectureDependencyResolutionOccurrence,
+    ): void => {
+      const key = `${occurrence.baseName}.${occurrence.memberName ?? ""}:${occurrence.coordinate.line}:${occurrence.coordinate.column}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      occurrences.push(occurrence);
+    };
+
+    for (const call of input.memberCallOccurrences) {
+      if (isDependencyResolutionAccess(call.baseName, call.memberName)) {
+        push({
+          baseName: call.baseName,
+          memberName: call.memberName,
+          coordinate: call.coordinate,
+        });
+      }
+    }
+
+    for (const access of input.staticMemberAccessOccurrences) {
+      if (isDependencyResolutionAccess(access.baseName, access.memberName)) {
+        push({
+          baseName: access.baseName,
+          memberName: access.memberName,
+          coordinate: access.coordinate,
+        });
+      }
+    }
+
+    for (const decorator of input.decoratorOccurrences) {
+      if (isDependencyResolutionDecoratorName(decorator.name)) {
+        push({
+          baseName: decorator.name,
+          coordinate: decorator.coordinate,
+        });
+      }
+    }
+
+    return occurrences;
   }
 
   private aliasMapForMethod(
@@ -762,4 +946,13 @@ function repoRelativePathFromURLs(fileURL: URL, rootURL: URL): string {
 
 function coordinateFor(node: Node): SourceCoordinate {
   return node.getSourceFile().getLineAndColumnAtPos(node.getStart());
+}
+
+function isCapitalizedIdentifier(name: string): boolean {
+  if (name.length === 0) {
+    return false;
+  }
+
+  const first = name.charAt(0);
+  return first >= "A" && first <= "Z";
 }
