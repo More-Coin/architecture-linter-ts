@@ -16,6 +16,7 @@ import type { ArchitectureStoredMemberDeclaration } from "./ArchitectureStoredMe
 import type { ArchitectureStringLiteralOccurrence } from "./ArchitectureStringLiteralOccurrence.ts";
 import type { ArchitectureTopLevelDeclaration } from "./ArchitectureTopLevelDeclaration.ts";
 import type { ArchitectureTopLevelValueDeclaration } from "./ArchitectureTopLevelValueDeclaration.ts";
+import type { ArchitectureTypeAliasDeclaration } from "./ArchitectureTypeAliasDeclaration.ts";
 import type { ArchitectureTypeReference } from "./ArchitectureTypeReference.ts";
 import type { ArchitectureTypedMemberOccurrence } from "./ArchitectureTypedMemberOccurrence.ts";
 import { FileClassification } from "./FileClassification.ts";
@@ -36,6 +37,7 @@ export interface ArchitectureFileInput {
   readonly storedMemberDeclarations?: readonly ArchitectureStoredMemberDeclaration[];
   readonly operationalUseOccurrences?: readonly ArchitectureOperationalUseOccurrence[];
   readonly typeReferences?: readonly ArchitectureTypeReference[];
+  readonly typeAliasDeclarations?: readonly ArchitectureTypeAliasDeclaration[];
   readonly topLevelDeclarations?: readonly ArchitectureTopLevelDeclaration[];
   readonly topLevelValueDeclarations?: readonly ArchitectureTopLevelValueDeclaration[];
   readonly nestedNominalDeclarations?: readonly ArchitectureNestedNominalDeclaration[];
@@ -60,6 +62,7 @@ export class ArchitectureFile {
   readonly storedMemberDeclarations: readonly ArchitectureStoredMemberDeclaration[];
   readonly operationalUseOccurrences: readonly ArchitectureOperationalUseOccurrence[];
   readonly typeReferences: readonly ArchitectureTypeReference[];
+  readonly typeAliasDeclarations: readonly ArchitectureTypeAliasDeclaration[];
   readonly topLevelDeclarations: readonly ArchitectureTopLevelDeclaration[];
   readonly topLevelValueDeclarations: readonly ArchitectureTopLevelValueDeclaration[];
   readonly nestedNominalDeclarations: readonly ArchitectureNestedNominalDeclaration[];
@@ -85,6 +88,7 @@ export class ArchitectureFile {
     this.storedMemberDeclarations = [...(input.storedMemberDeclarations ?? [])];
     this.operationalUseOccurrences = [...(input.operationalUseOccurrences ?? [])];
     this.typeReferences = [...(input.typeReferences ?? [])];
+    this.typeAliasDeclarations = [...(input.typeAliasDeclarations ?? [])];
     this.topLevelDeclarations = [...(input.topLevelDeclarations ?? [])];
     this.topLevelValueDeclarations = [
       ...(input.topLevelValueDeclarations ?? []),

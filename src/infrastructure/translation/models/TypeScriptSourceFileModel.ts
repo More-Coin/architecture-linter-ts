@@ -8,6 +8,7 @@ import {
   VariableDeclarationKind,
   type ClassDeclaration,
   type Expression,
+  type FunctionTypeNode,
   type GetAccessorDeclaration,
   type InterfaceDeclaration,
   type MethodDeclaration,
@@ -26,6 +27,7 @@ import type { ArchitectureConstructionOccurrence } from "../../../Domain/ValueOb
 import type { ArchitectureDecoratorOccurrence } from "../../../Domain/ValueObjects/ArchitectureDecoratorOccurrence.ts";
 import type { ArchitectureDependencyResolutionOccurrence } from "../../../Domain/ValueObjects/ArchitectureDependencyResolutionOccurrence.ts";
 import { ArchitectureFile } from "../../../Domain/ValueObjects/ArchitectureFile.ts";
+import type { ArchitectureFunctionTypeOccurrence } from "../../../Domain/ValueObjects/ArchitectureFunctionTypeOccurrence.ts";
 import type { ArchitectureLinterConfiguration } from "../../../Domain/ValueObjects/ArchitectureLinterConfiguration.ts";
 import type { ArchitectureStaticMemberAccessOccurrence } from "../../../Domain/ValueObjects/ArchitectureStaticMemberAccessOccurrence.ts";
 import type { ArchitectureTopLevelValueDeclarationKind } from "../../../Domain/ValueObjects/ArchitectureTopLevelValueDeclaration.ts";
@@ -35,6 +37,7 @@ import type { SourceCoordinate } from "../../../Domain/ValueObjects/SourceCoordi
 const BUILTIN_TYPE_NAMES = new Set([
   "Array",
   "Promise",
+  "PromiseLike",
   "Record",
   "ReadonlyArray",
   "Map",
@@ -66,6 +69,17 @@ const TYPE_KEYWORDS = new Set([
   "typeof",
   "infer",
   "extends",
+]);
+
+const LOWERCASE_PLATFORM_STATIC_MEMBER_ACCESSES = new Set([
+  "document.cookie",
+  "navigator.clipboard",
+  "process.env",
+  "import.meta.env",
+  "window.localStorage",
+  "window.sessionStorage",
+  "globalThis.localStorage",
+  "globalThis.sessionStorage",
 ]);
 
 export class TypeScriptSourceFileModel {
@@ -117,11 +131,7 @@ export class TypeScriptSourceFileModel {
         moduleName: declaration.getModuleSpecifierValue(),
         coordinate: coordinateFor(declaration.getModuleSpecifier()),
       })),
-      functionTypeOccurrences: sourceFile
-        .getDescendantsOfKind(SyntaxKind.FunctionType)
-        .map((node) => ({
-          coordinate: coordinateFor(node),
-        })),
+      functionTypeOccurrences: this.collectFunctionTypeOccurrences(sourceFile),
       identifierOccurrences: sourceFile
         .getDescendantsOfKind(SyntaxKind.Identifier)
         .map((identifier) => ({
@@ -142,6 +152,7 @@ export class TypeScriptSourceFileModel {
       storedMemberDeclarations,
       operationalUseOccurrences,
       typeReferences,
+      typeAliasDeclarations: this.collectTypeAliasDeclarations(sourceFile),
       topLevelDeclarations,
       topLevelValueDeclarations,
       nestedNominalDeclarations: [],
@@ -190,18 +201,6 @@ export class TypeScriptSourceFileModel {
             kind: NominalKind.Enum,
             inheritedTypeNames: [],
             memberNames: statement.getMembers().map((member) => member.getName()),
-            coordinate: coordinateFor(statement.getNameNode()),
-          },
-        ];
-      }
-
-      if (Node.isTypeAliasDeclaration(statement)) {
-        return [
-          {
-            name: statement.getName(),
-            kind: NominalKind.Struct,
-            inheritedTypeNames: [],
-            memberNames: [],
             coordinate: coordinateFor(statement.getNameNode()),
           },
         ];
@@ -285,6 +284,14 @@ export class TypeScriptSourceFileModel {
     );
   }
 
+  private collectFunctionTypeOccurrences(
+    sourceFile: SourceFile,
+  ): readonly ArchitectureFunctionTypeOccurrence[] {
+    return sourceFile
+      .getDescendantsOfKind(SyntaxKind.FunctionType)
+      .map((node) => this.toFunctionTypeOccurrence(node));
+  }
+
   private collectComputedPropertyDeclarations(sourceFile: SourceFile) {
     return sourceFile.getClasses().flatMap((declaration) =>
       declaration.getGetAccessors().map((accessor) =>
@@ -363,6 +370,24 @@ export class TypeScriptSourceFileModel {
       name,
       coordinate,
     }));
+  }
+
+  private collectTypeAliasDeclarations(sourceFile: SourceFile) {
+    return sourceFile.getTypeAliases().flatMap((declaration) => {
+      const typeNames = this.extractTypeNamesFromNode(declaration.getTypeNode());
+      const targetTypeName = typeNames.at(-1);
+      if (!targetTypeName) {
+        return [];
+      }
+
+      return [
+        {
+          aliasName: declaration.getName(),
+          targetTypeName,
+          coordinate: coordinateFor(declaration.getNameNode()),
+        },
+      ];
+    });
   }
 
   private collectCallOccurrences(sourceFile: SourceFile) {
@@ -471,7 +496,11 @@ export class TypeScriptSourceFileModel {
       }
       seen.add(key);
 
-      occurrences.push({ typeName, coordinate });
+      occurrences.push({
+        typeName,
+        assignedName: assignedNameForConstruction(newExpression),
+        coordinate,
+      });
     }
 
     return occurrences;
@@ -487,12 +516,13 @@ export class TypeScriptSourceFileModel {
       SyntaxKind.PropertyAccessExpression,
     )) {
       const baseExpression = node.getExpression();
-      if (!Node.isIdentifier(baseExpression)) {
-        continue;
-      }
-
       const baseName = baseExpression.getText();
-      if (!isCapitalizedIdentifier(baseName)) {
+      const memberName = node.getName();
+      const access = `${baseName}.${memberName}`;
+      if (
+        !LOWERCASE_PLATFORM_STATIC_MEMBER_ACCESSES.has(access) &&
+        (!Node.isIdentifier(baseExpression) || !isCapitalizedIdentifier(baseName))
+      ) {
         continue;
       }
 
@@ -509,7 +539,6 @@ export class TypeScriptSourceFileModel {
         continue;
       }
 
-      const memberName = node.getName();
       const coordinate = coordinateFor(node);
       const key = `${baseName}.${memberName}:${coordinate.line}:${coordinate.column}`;
       if (seen.has(key)) {
@@ -797,6 +826,24 @@ export class TypeScriptSourceFileModel {
     };
   }
 
+  private toFunctionTypeOccurrence(
+    declaration: FunctionTypeNode,
+  ): ArchitectureFunctionTypeOccurrence {
+    const returnTypeNode = declaration.getReturnTypeNode();
+    const returnTypeText =
+      returnTypeNode?.getText() ?? declaration.getReturnType().getText(declaration);
+
+    return {
+      coordinate: coordinateFor(declaration),
+      parameterTypeNames: declaration
+        .getParameters()
+        .flatMap((parameter) => this.extractTypeNamesFromNode(parameter.getTypeNode())),
+      returnTypeNames: this.extractTypeNamesFromText(returnTypeText),
+      isAsync: this.isPromiseLikeType(returnTypeText),
+      isVoidLikeReturn: this.isVoidLikeType(returnTypeText),
+    };
+  }
+
   private toComputedPropertyDeclaration(
     declaration: GetAccessorDeclaration,
     enclosingTypeName: string,
@@ -914,6 +961,14 @@ export class TypeScriptSourceFileModel {
     );
   }
 
+  private isPromiseLikeType(typeText: string): boolean {
+    const normalized = typeText.replace(/\s+/g, "");
+    return (
+      normalized.startsWith("Promise<") ||
+      normalized.startsWith("PromiseLike<")
+    );
+  }
+
 }
 
 function topLevelValueDeclarationKindFor(
@@ -946,6 +1001,43 @@ function repoRelativePathFromURLs(fileURL: URL, rootURL: URL): string {
 
 function coordinateFor(node: Node): SourceCoordinate {
   return node.getSourceFile().getLineAndColumnAtPos(node.getStart());
+}
+
+function assignedNameForConstruction(
+  newExpression: NewExpression,
+): string | undefined {
+  const parent = newExpression.getParent();
+
+  if (Node.isVariableDeclaration(parent)) {
+    const nameNode = parent.getNameNode();
+    return Node.isIdentifier(nameNode) ? nameNode.getText() : undefined;
+  }
+
+  if (Node.isPropertyDeclaration(parent)) {
+    return parent.getName();
+  }
+
+  if (
+    Node.isBinaryExpression(parent) &&
+    parent.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+    parent.getRight() === newExpression
+  ) {
+    return assignedNameFromExpression(parent.getLeft());
+  }
+
+  return undefined;
+}
+
+function assignedNameFromExpression(expression: Expression): string | undefined {
+  if (Node.isIdentifier(expression)) {
+    return expression.getText();
+  }
+
+  if (Node.isPropertyAccessExpression(expression)) {
+    return expression.getName();
+  }
+
+  return undefined;
 }
 
 function isCapitalizedIdentifier(name: string): boolean {

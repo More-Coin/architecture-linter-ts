@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/App/configuration/ArchitectureLinterConfiguration.ts";
 import { SourceFileDiscoveryGateway } from "../../src/Infrastructure/gateways/SourceFileDiscoveryGateway.ts";
 import { TypeScriptProjectPortAdapter } from "../../src/Infrastructure/port-adapters/TypeScriptProjectPortAdapter.ts";
+import { LinterProjectContextModel } from "../../src/Infrastructure/translation/models/LinterProjectContextModel.ts";
 
 test("ts-morph analyzer collects every NewExpression as a construction occurrence", () => {
   withTemporaryProject((rootPath, rootURL) => {
@@ -48,6 +49,13 @@ test("ts-morph analyzer collects every NewExpression as a construction occurrenc
     assert.ok(useCaseOccurrence);
     assert.ok(useCaseOccurrence.coordinate.line >= 1);
     assert.ok(useCaseOccurrence.coordinate.column >= 1);
+    assert.ok(
+      file.constructionOccurrences.some(
+        (occurrence) =>
+          occurrence.typeName === "FetchOrderUseCase" &&
+          occurrence.assignedName === "helper",
+      ),
+    );
   });
 });
 
@@ -112,6 +120,47 @@ test("ts-morph analyzer skips lowercase-base property accesses for static-member
     );
 
     assert.equal(lowercaseAccesses.length, 0);
+  });
+});
+
+test("ts-morph analyzer collects exact lowercase platform property accesses", () => {
+  withTemporaryProject((rootPath, rootURL) => {
+    writeProjectFile(
+      rootPath,
+      "src/Presentation/controllers/OrderController.ts",
+      [
+        "declare const document: { cookie: string };",
+        "declare const navigator: { clipboard: unknown };",
+        "declare const process: { env: unknown };",
+        "declare const window: { localStorage: unknown };",
+        "declare const globalThis: { sessionStorage: unknown };",
+        "export class OrderController {",
+        "  run(): void {",
+        "    const a = document.cookie;",
+        "    const b = navigator.clipboard;",
+        "    const c = process.env;",
+        "    const d = import.meta.env;",
+        "    const e = window.localStorage;",
+        "    const f = globalThis.sessionStorage;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const file = analyzeOne(rootURL, "src/Presentation/controllers/OrderController.ts");
+    const pairs = file.staticMemberAccessOccurrences
+      .map((occurrence) => `${occurrence.baseName}.${occurrence.memberName}`)
+      .sort();
+
+    assert.deepEqual(pairs, [
+      "document.cookie",
+      "globalThis.sessionStorage",
+      "import.meta.env",
+      "navigator.clipboard",
+      "process.env",
+      "window.localStorage",
+    ]);
   });
 });
 
@@ -210,17 +259,122 @@ test("ts-morph analyzer skips non-DI accesses on capitalized identifiers", () =>
   });
 });
 
+test("ts-morph analyzer records function type parameter, return, and Promise async metadata", () => {
+  withTemporaryProject((rootPath, rootURL) => {
+    writeProjectFile(
+      rootPath,
+      "src/Presentation/ViewModels/OrderViewModel.ts",
+      [
+        "interface SubmitOrderCommand { id: string }",
+        "interface OrderWorkflowContract { status: string }",
+        "export class OrderViewModel {",
+        "  submit?: (command: SubmitOrderCommand) => Promise<OrderWorkflowContract>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const file = analyzeOne(rootURL, "src/Presentation/ViewModels/OrderViewModel.ts");
+    const occurrence = file.functionTypeOccurrences[0];
+
+    assert.ok(occurrence, "expected a function type occurrence");
+    assert.deepEqual(occurrence.parameterTypeNames, ["SubmitOrderCommand"]);
+    assert.deepEqual(occurrence.returnTypeNames, ["OrderWorkflowContract"]);
+    assert.equal(occurrence.isAsync, true);
+    assert.equal(occurrence.isVoidLikeReturn, false);
+  });
+});
+
+test("ts-morph analyzer unwraps PromiseLike function return metadata without exposing PromiseLike", () => {
+  withTemporaryProject((rootPath, rootURL) => {
+    writeProjectFile(
+      rootPath,
+      "src/Presentation/ViewModels/OrderViewModel.ts",
+      [
+        "interface ApplicationContract { status: string }",
+        "export class OrderViewModel {",
+        "  load?: () => PromiseLike<ApplicationContract>;",
+        "  save?: () => PromiseLike<void>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const file = analyzeOne(rootURL, "src/Presentation/ViewModels/OrderViewModel.ts");
+    const [loadOccurrence, saveOccurrence] = file.functionTypeOccurrences;
+
+    assert.ok(loadOccurrence, "expected PromiseLike<ApplicationContract> occurrence");
+    assert.deepEqual(loadOccurrence.returnTypeNames, ["ApplicationContract"]);
+    assert.equal(loadOccurrence.isAsync, true);
+    assert.equal(loadOccurrence.isVoidLikeReturn, false);
+
+    assert.ok(saveOccurrence, "expected PromiseLike<void> occurrence");
+    assert.deepEqual(saveOccurrence.returnTypeNames, []);
+    assert.equal(saveOccurrence.isAsync, true);
+    assert.equal(saveOccurrence.isVoidLikeReturn, true);
+  });
+});
+
+test("project context model indexes string literal sites across analyzed files", () => {
+  withTemporaryProject((rootPath, rootURL) => {
+    writeProjectFile(
+      rootPath,
+      "src/Presentation/ViewModels/OrderViewModel.ts",
+      [
+        "export class OrderViewModel {",
+        "  readonly prefix = 'order.ref:';",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeProjectFile(
+      rootPath,
+      "src/Infrastructure/Gateways/OrderGateway.ts",
+      [
+        "export class OrderGateway {",
+        "  readonly prefix = 'order.ref:';",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const files = analyzeProject(rootURL);
+    const context = new LinterProjectContextModel().toDomain(files);
+    const sites = context.literalSites("order.ref:");
+
+    assert.equal(sites.length, 2);
+    assert.ok(
+      sites.some(
+        (site) =>
+          site.repoRelativePath ===
+          "src/Presentation/ViewModels/OrderViewModel.ts",
+      ),
+    );
+    assert.ok(
+      sites.some(
+        (site) =>
+          site.repoRelativePath ===
+          "src/Infrastructure/Gateways/OrderGateway.ts",
+      ),
+    );
+  });
+});
+
 function analyzeOne(rootURL: URL, repoRelativePath: string) {
-  const configuration = DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION;
-  const discovery = new SourceFileDiscoveryGateway(configuration.sourceExtensions);
-  const fileURLs = discovery.discoverSourceFiles(rootURL);
-  const files = new TypeScriptProjectPortAdapter(configuration).analyzeProject(
-    rootURL,
-    fileURLs,
-  );
+  const files = analyzeProject(rootURL);
   const file = files.find((candidate) => candidate.repoRelativePath === repoRelativePath);
   assert.ok(file, `expected to find analyzed file at ${repoRelativePath}`);
   return file;
+}
+
+function analyzeProject(rootURL: URL) {
+  const configuration = DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION;
+  const discovery = new SourceFileDiscoveryGateway(configuration.sourceExtensions);
+  const fileURLs = discovery.discoverSourceFiles(rootURL);
+  return new TypeScriptProjectPortAdapter(configuration).analyzeProject(
+    rootURL,
+    fileURLs,
+  );
 }
 
 function withTemporaryProject(

@@ -7,6 +7,8 @@ import { ArchitectureLayer } from "../ValueObjects/ArchitectureLayer.ts";
 import type { ArchitectureComputedPropertyDeclaration } from "../ValueObjects/ArchitectureComputedPropertyDeclaration.ts";
 import type { ArchitectureDiagnostic } from "../ValueObjects/ArchitectureDiagnostic.ts";
 import type { ArchitectureFile } from "../ValueObjects/ArchitectureFile.ts";
+import type { ArchitectureLinterConfiguration } from "../ValueObjects/ArchitectureLinterConfiguration.ts";
+import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../ValueObjects/ArchitectureLinterConfiguration.ts";
 import type { ArchitectureMethodDeclaration } from "../ValueObjects/ArchitectureMethodDeclaration.ts";
 import type { ArchitectureNestedNominalDeclaration } from "../ValueObjects/ArchitectureNestedNominalDeclaration.ts";
 import { NominalKind } from "../ValueObjects/NominalKind.ts";
@@ -17,6 +19,10 @@ import type { IndexedDeclaration } from "../ValueObjects/IndexedDeclaration.ts";
 import type { ProjectContext } from "../ValueObjects/ProjectContext.ts";
 import { RoleFolder } from "../ValueObjects/RoleFolder.ts";
 import type { SourceCoordinate } from "../ValueObjects/SourceCoordinate.ts";
+import {
+  canonicalReferenceTypeName,
+  iterateReferenceOccurrences,
+} from "./shared/ReferenceOccurrences.ts";
 import { richRemediationMessage } from "./shared/RichRemediationMessage.ts";
 
 export class InfrastructureRepositoriesShapePolicy
@@ -138,11 +144,11 @@ export class InfrastructureRepositoriesRoleFitPolicy
           ...method.parameterTypeNames,
           ...method.returnTypeNames,
         ]) {
-          const leakedDeclaration = context.uniqueDeclaration(typeName);
-          if (!leakedDeclaration) {
-            continue;
-          }
-          if (!isRepositoryBoundaryLeakRoleFolder(leakedDeclaration.roleFolder)) {
+          const leakedDeclaration = repositoryBoundaryLeakDeclaration(
+            typeName,
+            context,
+          );
+          if (!isRepositoryMisclassificationTypeName(typeName, file, context)) {
             continue;
           }
 
@@ -156,7 +162,7 @@ export class InfrastructureRepositoriesRoleFitPolicy
             file.diagnostic(
               InfrastructureRepositoriesRoleFitPolicy.ruleID,
               richRemediationMessage({
-                summary: `Repository '${declaration.name}' exposes outer-layer DTO/model type '${typeName}' in its public operation surface (from ${leakedDeclaration.repoRelativePath}).`,
+                summary: `Repository '${declaration.name}' exposes outer-layer DTO/model type '${typeName}' in its public operation surface (${repositoryLeakSourceDescription(leakedDeclaration)}).`,
                 categories: [
                   "provider DTO leaked through repository API",
                   "translation model exposed instead of Domain/Application result",
@@ -179,35 +185,39 @@ export class InfrastructureRepositoriesRoleFitPolicy
         }
       }
 
-      // Path (b) — missing inward Repository conformance.
-      const hasRepositoryConformance = declaration.inheritedTypeNames.some(
-        (inherited) =>
-          inherited.endsWith("Repository") ||
-          inherited.endsWith("RepositoryProtocol") ||
-          inherited.endsWith("RepositoryInterface") ||
-          inherited.endsWith("RepositoryPort"),
+      // Path (b) — missing inward Repository conformance plus evidence that
+      // the type is not acting as a real data-access adapter.
+      const methods = file.methodDeclarations.filter(
+        (method) => method.enclosingTypeName === declaration.name,
       );
 
-      if (!hasRepositoryConformance) {
+      if (
+        !hasRepositoryInwardProtocolConformance(declaration, context) &&
+        !hasRepositoryDataAccessEvidence(file, declaration.name, methods, context) &&
+        hasRepositoryMisclassificationEvidence(file, declaration, methods, context)
+      ) {
         diagnostics.push(
           file.diagnostic(
             InfrastructureRepositoriesRoleFitPolicy.ruleID,
             richRemediationMessage({
-              summary: `'${declaration.name}' is repository-shaped in ${file.repoRelativePath} but does not declare an inward Repository protocol/interface conformance.`,
+              summary: `'${declaration.name}' is repository-shaped but does not appear to act as a concrete repository adapter.`,
               categories: [
-                "repository-shaped type without inward protocol conformance",
-                "translation/helper/mapper behavior placed in Infrastructure/Repositories",
+                "repository-shaped type without data-source adaptation",
+                "translation/helper/reporting behavior placed in Infrastructure/Repositories",
                 "gateway or port-adapter behavior mislabeled as repository",
+                "repository type missing inward protocol conformance",
               ],
               signs: [
-                `type '${declaration.name}' ends with 'Repository' and lives under Infrastructure/Repositories`,
-                "no inherited type ends with Repository / RepositoryProtocol / RepositoryInterface / RepositoryPort",
-                "the linter cannot confirm the type fulfils any inward repository contract",
+                `type '${declaration.name}' ends with 'Repository'`,
+                "type lives under Infrastructure/Repositories",
+                "type lacks conformance to an Application/Ports/Protocols or Domain/Protocols abstraction",
+                "methods do not show repository data-access verbs or data-source adaptation",
+                "methods or public signatures show DTO, Response, Request, Model, Mapper, Builder, Parser, Evaluator, Gateway, or Adapter evidence",
               ],
               architecturalNote:
-                "A repository is a concrete Infrastructure adapter that fulfils an inward repository/data-access protocol and hides persistence or provider details from UseCases. A 'repository' that conforms to nothing is usually translation, gateway, or evaluator behavior wearing the wrong name.",
+                "A repository is a concrete Infrastructure adapter that fulfils an inward repository/data-access protocol and hides persistence or provider details from UseCases. Translation-only, DTO-only, gateway execution, and evaluator behavior belong in adjacent Infrastructure roles.",
               destination:
-                "Infrastructure/Repositories for true data-source adaptation backed by an inward Domain/Protocols (or Application/Ports/Protocols) Repository contract; otherwise the role folder that matches the actual behavior.",
+                "Keep true data-source adaptation in Infrastructure/Repositories. Move provider request/response shapes to Infrastructure/Translation/DTOs, intermediary mapping shapes to Infrastructure/Translation/Models, external boundary execution to Infrastructure/Gateways, seam adapters to Infrastructure/PortAdapters, and pure technical decisions to Infrastructure/Evaluators.",
               decomposition: `Decide what '${declaration.name}' actually owns. If it adapts persistence or provider data access, make it conform to the matching inward Repository protocol/interface and keep public methods returning Domain/Application types. If it primarily maps provider shapes, move the mapping to Infrastructure/Translation/Models or to a private helper used only by this repository. If it primarily executes an external boundary, move it to Infrastructure/Gateways. If it only exposes DTOs or response models, move those types to Infrastructure/Translation/DTOs and keep a concrete *Repository in this file only when there is actual repository behavior.`,
             }),
             declaration.coordinate,
@@ -217,6 +227,77 @@ export class InfrastructureRepositoriesRoleFitPolicy
     }
 
     return diagnostics;
+  }
+}
+
+export class InfrastructureRepositoriesInlineBusinessLiteralsPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID =
+    "infrastructure.repositories.inline_business_literals";
+
+  private readonly storageNamespacePrefixes: readonly string[];
+
+  constructor(
+    configuration: ArchitectureLinterConfiguration =
+      DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+  ) {
+    this.storageNamespacePrefixes = configuration.storageNamespacePrefixes;
+  }
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (
+      file.classification.roleFolder !== RoleFolder.InfrastructureRepositories &&
+      file.classification.roleFolder !== RoleFolder.InfrastructurePortAdapters
+    ) {
+      return [];
+    }
+
+    const role =
+      file.classification.roleFolder === RoleFolder.InfrastructureRepositories
+        ? "Repository"
+        : "PortAdapter";
+
+    return file.stringLiteralOccurrences
+      .filter((occurrence) => {
+        const value = occurrence.value;
+        const isCatalogKey =
+          INFRASTRUCTURE_BUSINESS_CATALOG_KEY_PATTERN.test(value) &&
+          !this.storageNamespacePrefixes.some((prefix) =>
+            value.startsWith(prefix),
+          );
+        const isCopy = value.split(/\s+/).filter(Boolean).length >= 4;
+
+        return isCatalogKey || isCopy;
+      })
+      .map((occurrence) =>
+        file.diagnostic(
+          InfrastructureRepositoriesInlineBusinessLiteralsPolicy.ruleID,
+          richRemediationMessage({
+            summary: `Infrastructure ${role} '${file.repoRelativePath}' embeds business/content vocabulary as string literal '${occurrence.value}'.`,
+            categories: [
+              "business projection or synthesis policy implemented inside a persistence adapter",
+              "localization-catalog key hardcoded in Infrastructure",
+              "unlocalized user-facing copy authored in Infrastructure",
+            ],
+            signs: [
+              "literal is a 3+-segment dotted catalog key outside the project's configured storage namespaces, or contains 4 or more words of natural-language copy",
+              "the same literal is duplicated across sibling implementations",
+              "the adapter conforms to an inward port yet decides what content the user sees",
+            ],
+            architecturalNote:
+              "repositories and adapters adapt persistence and providers only -- selection, synthesis, and mapping rules expressed through key literals or copy templates are Domain/Application policy, and duplicating them per store guarantees drift between backends while shipping unlocalized copy on localized devices.",
+            destination:
+              "Domain/Policies (or the Application UseCase invoked through the port) for the projection/synthesis rule; the localization catalog, resolved in Presentation, for user-visible copy; Infrastructure/Translation/Models for genuine stored-value constants.",
+            decomposition:
+              "1) extract one shared Domain policy owning the key taxonomy and mapping; 2) have every backend return raw stored aggregates through the port; 3) compose the policy in the Application use case so all backends share one implementation; 4) replace embedded copy with a localization key plus arguments resolved at the presentation edge; 5) re-run the linter.",
+          }),
+          occurrence.coordinate,
+        ),
+      );
   }
 }
 
@@ -1811,7 +1892,9 @@ export class InfrastructureForbiddenPresentationDependencyPolicy
       }
       seenNames.add(reference.name);
 
-      const declaration = context.uniqueDeclaration(reference.name);
+      const declaration = context.resolvedDeclarations(reference.name).find(
+        (candidate) => candidate.layer === ArchitectureLayer.Presentation,
+      );
       if (!declaration || declaration.layer !== ArchitectureLayer.Presentation) {
         continue;
       }
@@ -1824,6 +1907,160 @@ export class InfrastructureForbiddenPresentationDependencyPolicy
             "Replace the Presentation dependency with an inward contract or an Infrastructure-owned type.",
           ),
           reference.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
+export class InfrastructureUseCaseOrServiceReferencePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "infrastructure.usecase_or_service_reference";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isInfrastructure) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+
+    for (const occurrence of file.constructionOccurrences) {
+      const typeName = canonicalReferenceTypeName(occurrence.typeName);
+      const declaration = firstDeclarationWithRole(context, typeName, [
+        RoleFolder.ApplicationUseCases,
+        RoleFolder.ApplicationServices,
+      ]);
+      if (!declaration) {
+        continue;
+      }
+
+      diagnostics.push(
+        infrastructureOrchestrationDiagnostic({
+          file,
+          typeName,
+          declaration,
+          coordinate: occurrence.coordinate,
+        }),
+      );
+    }
+
+    const localNames = new Set(
+      file.topLevelDeclarations.map((declaration) => declaration.name),
+    );
+    const seenTypeReferenceNames = new Set<string>();
+
+    for (const reference of file.typeReferences) {
+      const typeName = canonicalReferenceTypeName(reference.name);
+      if (localNames.has(typeName) || seenTypeReferenceNames.has(typeName)) {
+        continue;
+      }
+      seenTypeReferenceNames.add(typeName);
+
+      const declaration = firstDeclarationWithRole(context, typeName, [
+        RoleFolder.ApplicationUseCases,
+      ]);
+      if (!declaration) {
+        continue;
+      }
+
+      diagnostics.push(
+        infrastructureOrchestrationDiagnostic({
+          file,
+          typeName,
+          declaration,
+          coordinate: reference.coordinate,
+        }),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
+export class InfrastructureAdapterOnAdapterCompositionPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "infrastructure.adapter_on_adapter_composition";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isInfrastructureAdapterRole) {
+      return [];
+    }
+
+    const localNames = new Set([
+      ...file.topLevelDeclarations.map((declaration) => declaration.name),
+      ...file.nestedNominalDeclarations.map((declaration) => declaration.name),
+    ]);
+    const occurrencesByName = new Map<
+      string,
+      { readonly name: string; readonly coordinate: SourceCoordinate }[]
+    >();
+
+    for (const occurrence of iterateReferenceOccurrences(file)) {
+      if (localNames.has(occurrence.name)) {
+        continue;
+      }
+
+      occurrencesByName.set(occurrence.name, [
+        ...(occurrencesByName.get(occurrence.name) ?? []),
+        occurrence,
+      ]);
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    for (const [name, occurrences] of occurrencesByName) {
+      const declaration = context.declarations.find((candidate) => {
+        if (candidate.name !== name) {
+          return false;
+        }
+
+        if (candidate.roleFolder === RoleFolder.ApplicationStateTransitions) {
+          return true;
+        }
+
+        return (
+          isInfrastructureAdapterRole(candidate.roleFolder) &&
+          isConcreteNominalKind(candidate.kind) &&
+          candidate.repoRelativePath !== file.repoRelativePath
+        );
+      });
+
+      if (!declaration) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          InfrastructureAdapterOnAdapterCompositionPolicy.ruleID,
+          richRemediationMessage({
+            summary: `Infrastructure adapter file '${file.repoRelativePath}' depends on concrete sibling Infrastructure adapter or Application StateTransition '${name}' declared in ${declaration.repoRelativePath}.`,
+            categories: [
+              "adapter-on-adapter composition bypassing the composition root",
+              "injected port downcast to a concrete sibling implementation",
+              "cross-adapter static registry coupling",
+              "multi-store workflow orchestration hidden inside one adapter",
+            ],
+            signs: [
+              "construction, stored property, cast, or static member access names a concrete Repository/PortAdapter/Gateway from another Infrastructure file",
+              "the dependency is not expressed through an Application/Ports/Protocols or Domain/Protocols seam",
+              "substituting either adapter in tests or wiring is impossible",
+            ],
+            architecturalNote:
+              "Adapters implement one boundary each and depend only on inward contracts. When an adapter holds a concrete sibling, the pair becomes one unsubstitutable unit, the composition root loses authority over wiring, and behavior reached through the sibling silently diverges for any other conforming implementation.",
+            destination:
+              "Application/Ports/Protocols for a narrow seam covering exactly the operations the depending adapter needs; App/DependencyInjection for constructing both adapters and injecting the seam; an Application UseCase/Service if the coupling exists to sequence work across multiple stores.",
+            decomposition: `Define or extend an inward port protocol for the operations '${name}' provides, inject that seam through the depending adapter's initializer, wire the concrete adapters in App/DependencyInjection, and lift multi-store sequencing into an Application use case before deleting the concrete reference.`,
+          }),
+          earliestCoordinate(occurrences),
         ),
       );
     }
@@ -1868,10 +2105,14 @@ export class InfrastructureCrossLayerProtocolConformancePolicy
   }
 }
 
-export function makeInfrastructureArchitecturePolicies(): readonly ArchitecturePolicyProtocol[] {
+export function makeInfrastructureArchitecturePolicies(
+  configuration: ArchitectureLinterConfiguration =
+    DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+): readonly ArchitecturePolicyProtocol[] {
   return [
     new InfrastructureRepositoriesShapePolicy(),
     new InfrastructureRepositoriesRoleFitPolicy(),
+    new InfrastructureRepositoriesInlineBusinessLiteralsPolicy(configuration),
     new InfrastructureGatewaysShapePolicy(),
     new InfrastructureGatewaysRoleFitPolicy(),
     new InfrastructurePortAdaptersShapePolicy(),
@@ -1909,9 +2150,14 @@ export function makeInfrastructureArchitecturePolicies(): readonly ArchitectureP
     new InfrastructureErrorsShapePolicy(),
     new InfrastructureErrorsPlacementPolicy(),
     new InfrastructureForbiddenPresentationDependencyPolicy(),
+    new InfrastructureUseCaseOrServiceReferencePolicy(),
+    new InfrastructureAdapterOnAdapterCompositionPolicy(),
     new InfrastructureCrossLayerProtocolConformancePolicy(),
   ];
 }
+
+const INFRASTRUCTURE_BUSINESS_CATALOG_KEY_PATTERN =
+  /^[a-z0-9_-]+(\.[a-z0-9_-]+){2,}$/;
 
 function diagnoseGatewayMethodPattern(
   file: ArchitectureFile,
@@ -2001,11 +2247,444 @@ function infrastructureRemediationMessage(
   });
 }
 
+function firstDeclarationWithRole(
+  context: ProjectContext,
+  typeName: string,
+  roleFolders: readonly RoleFolder[],
+): IndexedDeclaration | undefined {
+  return context.declarations.find(
+    (declaration) =>
+      declaration.name === typeName && roleFolders.includes(declaration.roleFolder),
+  );
+}
+
+function isInfrastructureAdapterRole(roleFolder: RoleFolder): boolean {
+  return (
+    roleFolder === RoleFolder.InfrastructureRepositories ||
+    roleFolder === RoleFolder.InfrastructureGateways ||
+    roleFolder === RoleFolder.InfrastructurePortAdapters
+  );
+}
+
+function isConcreteNominalKind(kind: NominalKind): boolean {
+  return (
+    kind === NominalKind.Class ||
+    kind === NominalKind.Struct ||
+    kind === NominalKind.Actor
+  );
+}
+
+function earliestCoordinate(
+  occurrences: readonly { readonly coordinate: SourceCoordinate }[],
+): SourceCoordinate {
+  return (
+    occurrences.map((occurrence) => occurrence.coordinate).sort(compareCoordinates)[0] ??
+    { line: 1, column: 1 }
+  );
+}
+
+function compareCoordinates(
+  left: SourceCoordinate,
+  right: SourceCoordinate,
+): number {
+  if (left.line !== right.line) {
+    return left.line - right.line;
+  }
+
+  return left.column - right.column;
+}
+
+function infrastructureOrchestrationDiagnostic(input: {
+  readonly file: ArchitectureFile;
+  readonly typeName: string;
+  readonly declaration: IndexedDeclaration;
+  readonly coordinate: SourceCoordinate;
+}): ArchitectureDiagnostic {
+  return input.file.diagnostic(
+    InfrastructureUseCaseOrServiceReferencePolicy.ruleID,
+    richRemediationMessage({
+      summary: `Infrastructure file '${input.file.repoRelativePath}' references Application orchestration type '${input.typeName}' from ${input.declaration.repoRelativePath}.`,
+      categories: [
+        "Application UseCase or Service referenced from Infrastructure",
+        "UseCase or Service construction embedded in an adapter",
+        "workflow orchestration leaking into concrete boundary code",
+      ],
+      signs: [
+        "Infrastructure file constructs a type declared under Application/UseCases or Application/Services",
+        "Infrastructure type reference resolves to an Application/UseCases declaration",
+        `the matched orchestration declaration is '${input.typeName}'`,
+      ],
+      architecturalNote:
+        "Infrastructure implements outward details behind inward seams. UseCases and Services orchestrate application workflows and are wired by the App composition root, so Infrastructure must not reach back into them.",
+      destination:
+        "App/DependencyInjection for construction and wiring; Application/Services or Application/UseCases for orchestration logic; Infrastructure keeps only concrete boundary work behind inward port protocols.",
+      decomposition: `Move '${input.typeName}' construction or dependency ownership out of ${input.file.repoRelativePath}. If Infrastructure needs to notify or fetch something, depend on an inward Application/Ports/Protocols or Domain/Protocols interface and wire the concrete collaborator in App/DependencyInjection. If the code is actually orchestrating workflow steps, move that behavior into Application/Services or Application/UseCases and keep Infrastructure focused on the boundary operation.`,
+    }),
+    input.coordinate,
+  );
+}
+
 function isRepositoryBoundaryLeakRoleFolder(roleFolder: RoleFolder): boolean {
   return (
     roleFolder === RoleFolder.InfrastructureTranslationDTOs ||
     roleFolder === RoleFolder.InfrastructureTranslationModels ||
     roleFolder === RoleFolder.PresentationDTOs
+  );
+}
+
+function hasRepositoryInwardProtocolConformance(
+  declaration: {
+    readonly inheritedTypeNames: readonly string[];
+  },
+  context: ProjectContext,
+): boolean {
+  return declaration.inheritedTypeNames.some((inheritedTypeName) =>
+    context.declarations.some(
+      (inheritedDeclaration) =>
+        inheritedDeclaration.name === inheritedTypeName &&
+        inheritedDeclaration.kind === NominalKind.Protocol &&
+        (inheritedDeclaration.roleFolder === RoleFolder.ApplicationPortsProtocols ||
+          inheritedDeclaration.roleFolder === RoleFolder.DomainProtocols),
+    ),
+  );
+}
+
+function hasRepositoryDataAccessEvidence(
+  file: ArchitectureFile,
+  repositoryTypeName: string,
+  methods: readonly {
+    readonly name: string;
+    readonly isPrivateOrFileprivate: boolean;
+    readonly parameterTypeNames: readonly string[];
+    readonly returnTypeNames: readonly string[];
+  }[],
+  context: ProjectContext,
+): boolean {
+  const nonPrivateMethods = methods.filter(
+    (method) => !method.isPrivateOrFileprivate,
+  );
+
+  if (nonPrivateMethods.some((method) => isRepositoryDataAccessVerb(method.name))) {
+    return true;
+  }
+
+  if (methodReferencesRepositoryDataSource(file, repositoryTypeName, nonPrivateMethods)) {
+    return true;
+  }
+
+  if (hasRepositoryDataSourceDependency(file, repositoryTypeName)) {
+    return nonPrivateMethods.some(
+      (method) =>
+        methodHasDomainOrApplicationBoundary(method, context) &&
+        !isTranslationOnlyVerb(method.name) &&
+        !isGatewayExecutionVerb(method.name) &&
+        !isEvaluatorVerb(method.name) &&
+        !isRepositoryReportingOrCalculationOnlyVerb(method.name),
+    );
+  }
+
+  return false;
+}
+
+function hasRepositoryMisclassificationEvidence(
+  file: ArchitectureFile,
+  declaration: {
+    readonly name: string;
+  },
+  methods: readonly {
+    readonly name: string;
+    readonly isPrivateOrFileprivate: boolean;
+    readonly parameterTypeNames: readonly string[];
+    readonly returnTypeNames: readonly string[];
+  }[],
+  context: ProjectContext,
+): boolean {
+  if (
+    file.topLevelDeclarations.some(
+      (topLevelDeclaration) =>
+        topLevelDeclaration.name !== declaration.name &&
+        topLevelDeclaration.kind !== NominalKind.Protocol &&
+        topLevelDeclaration.kind !== NominalKind.Enum &&
+        isRepositorySupportTypeName(topLevelDeclaration.name),
+    )
+  ) {
+    return true;
+  }
+
+  if (hasRepositoryPublicSurfaceLeak(file, declaration.name, context)) {
+    return true;
+  }
+
+  return methods.some((method) => {
+    if (method.isPrivateOrFileprivate) {
+      return false;
+    }
+
+    return (
+      isTranslationOnlyVerb(method.name) ||
+      isGatewayExecutionVerb(method.name) ||
+      isEvaluatorVerb(method.name) ||
+      isRepositoryReportingOrCalculationOnlyVerb(method.name) ||
+      method.parameterTypeNames.some((typeName) =>
+        isRepositoryMisclassificationTypeName(typeName, file, context),
+      ) ||
+      method.returnTypeNames.some((typeName) =>
+        isRepositoryMisclassificationTypeName(typeName, file, context),
+      )
+    );
+  });
+}
+
+function hasRepositoryPublicSurfaceLeak(
+  file: ArchitectureFile,
+  repositoryTypeName: string,
+  context: ProjectContext,
+): boolean {
+  return file.methodDeclarations.some((method) => {
+    if (
+      method.enclosingTypeName !== repositoryTypeName ||
+      !method.isPublicOrOpen
+    ) {
+      return false;
+    }
+
+    return [...method.parameterTypeNames, ...method.returnTypeNames].some(
+      (typeName) => isRepositoryMisclassificationTypeName(typeName, file, context),
+    );
+  });
+}
+
+function isRepositoryDataAccessVerb(name: string): boolean {
+  return startsWithAnyLowercased(name, [
+    "fetch",
+    "find",
+    "get",
+    "list",
+    "load",
+    "query",
+    "search",
+    "save",
+    "insert",
+    "update",
+    "upsert",
+    "delete",
+    "remove",
+    "count",
+    "exists",
+    "record",
+    "persist",
+    "sync",
+    "cache",
+  ]);
+}
+
+function isTranslationOnlyVerb(name: string): boolean {
+  return startsWithAnyLowercased(name, [
+    "map",
+    "translate",
+    "build",
+    "parse",
+    "normalize",
+    "convert",
+    "makedto",
+    "todto",
+    "fromdto",
+    "shape",
+  ]);
+}
+
+function isGatewayExecutionVerb(name: string): boolean {
+  return startsWithAnyLowercased(name, [
+    "send",
+    "post",
+    "put",
+    "patch",
+    "request",
+    "executerequest",
+    "stream",
+    "subscribe",
+    "connect",
+    "upload",
+    "download",
+    "dispatchremote",
+  ]);
+}
+
+function isEvaluatorVerb(name: string): boolean {
+  return startsWithAnyLowercased(name, [
+    "evaluate",
+    "classify",
+    "select",
+    "resolvecompatibility",
+    "decide",
+    "allow",
+    "reject",
+  ]);
+}
+
+function isRepositoryDataSourceDependencyName(name: string): boolean {
+  const lowercasedName = name.toLowerCase();
+  if (lowercasedName === "db") {
+    return true;
+  }
+
+  return [
+    "database",
+    "store",
+    "storage",
+    "client",
+    "supabase",
+    "convex",
+    "api",
+    "persistence",
+    "cache",
+    "session",
+    "connection",
+    "collection",
+    "table",
+    "modelcontext",
+  ].some((keyword) => lowercasedName.includes(keyword));
+}
+
+function isRepositorySupportTypeName(name: string): boolean {
+  const lowercasedName = name.toLowerCase();
+  return [
+    "dto",
+    "response",
+    "request",
+    "model",
+    "mapper",
+    "builder",
+    "parser",
+    "payload",
+    "record",
+    "row",
+    "document",
+    "snapshot",
+    "projection",
+    "helper",
+    "evaluator",
+    "gateway",
+    "adapter",
+  ].some((keyword) => lowercasedName.includes(keyword));
+}
+
+function isRepositoryReportingOrCalculationOnlyVerb(name: string): boolean {
+  return startsWithAnyLowercased(name, ["format", "report", "calculate"]);
+}
+
+function hasRepositoryDataSourceDependency(
+  file: ArchitectureFile,
+  repositoryTypeName: string,
+): boolean {
+  return file.storedMemberDeclarations.some(
+    (declaration) =>
+      declaration.enclosingTypeName === repositoryTypeName &&
+      (isRepositoryDataSourceDependencyName(declaration.name) ||
+        declaration.typeNames.some(isRepositoryDataSourceDependencyName)),
+  );
+}
+
+function methodReferencesRepositoryDataSource(
+  file: ArchitectureFile,
+  repositoryTypeName: string,
+  methods: readonly { readonly name: string }[],
+): boolean {
+  const dataSourceMemberNames = new Set(
+    file.storedMemberDeclarations
+      .filter(
+        (declaration) =>
+          declaration.enclosingTypeName === repositoryTypeName &&
+          (isRepositoryDataSourceDependencyName(declaration.name) ||
+            declaration.typeNames.some(isRepositoryDataSourceDependencyName)),
+      )
+      .map((declaration) => declaration.name),
+  );
+  if (dataSourceMemberNames.size === 0) {
+    return false;
+  }
+
+  const methodNames = new Set(methods.map((method) => method.name));
+  return file.operationalUseOccurrences.some(
+    (occurrence) =>
+      occurrence.enclosingTypeName === repositoryTypeName &&
+      methodNames.has(occurrence.enclosingMethodName) &&
+      dataSourceMemberNames.has(occurrence.baseName) &&
+      isRepositoryDataAccessVerb(occurrence.memberName),
+  );
+}
+
+function methodHasDomainOrApplicationBoundary(
+  method: {
+    readonly parameterTypeNames: readonly string[];
+    readonly returnTypeNames: readonly string[];
+  },
+  context: ProjectContext,
+): boolean {
+  return [...method.parameterTypeNames, ...method.returnTypeNames].some(
+    (typeName) =>
+      context.resolvedDeclarations(typeName).some(
+        (declaration) =>
+          declaration.layer === ArchitectureLayer.Domain ||
+          declaration.layer === ArchitectureLayer.Application,
+      ),
+  );
+}
+
+function isRepositoryMisclassificationTypeName(
+  typeName: string,
+  file: ArchitectureFile,
+  context: ProjectContext,
+): boolean {
+  return (
+    context.resolvedDeclarations(typeName).some((declaration) =>
+      isRepositoryBoundaryLeakRoleFolder(declaration.roleFolder),
+    ) ||
+    isLocalRepositorySupportType(typeName, file)
+  );
+}
+
+function repositoryLeakSourceDescription(
+  declaration: ReturnType<typeof repositoryBoundaryLeakDeclaration>,
+): string {
+  if (declaration) {
+    return `from ${declaration.repoRelativePath}`;
+  }
+
+  return "declared in the same repository file";
+}
+
+function repositoryBoundaryLeakDeclaration(
+  typeName: string,
+  context: ProjectContext,
+) {
+  return context
+    .resolvedDeclarations(typeName)
+    .find((declaration) =>
+      isRepositoryBoundaryLeakRoleFolder(declaration.roleFolder),
+    );
+}
+
+function isLocalRepositorySupportType(
+  typeName: string,
+  file: ArchitectureFile,
+): boolean {
+  return file.topLevelDeclarations.some(
+    (declaration) =>
+      declaration.name === typeName &&
+      declaration.kind !== NominalKind.Protocol &&
+      declaration.kind !== NominalKind.Enum &&
+      isRepositorySupportTypeName(declaration.name),
+  );
+}
+
+function startsWithAnyLowercased(
+  name: string,
+  prefixes: readonly string[],
+): boolean {
+  const lowercasedName = name.toLowerCase();
+  return prefixes.some(
+    (prefix) => lowercasedName === prefix || lowercasedName.startsWith(prefix),
   );
 }
 

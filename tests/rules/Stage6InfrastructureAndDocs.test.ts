@@ -86,6 +86,72 @@ test("repositories.role_fit flags translation-DTO leak through a public reposito
   }
 });
 
+test("repositories.role_fit flags ambiguous translation-DTO leak through a public repository return type", () => {
+  const file = makeInfrastructureFile({
+    repoRelativePath:
+      "Symphony/Infrastructure/Repositories/PostgresOrdersRepository.ts",
+    roleFolder: RoleFolder.InfrastructureRepositories,
+    topLevelDeclarations: [
+      {
+        name: "PostgresOrdersRepository",
+        kind: NominalKind.Class,
+        inheritedTypeNames: ["OrdersRepositoryProtocol"],
+        memberNames: ["findById"],
+        coordinate: { line: 1, column: 1 },
+      },
+    ],
+    methodDeclarations: [
+      {
+        enclosingTypeName: "PostgresOrdersRepository",
+        name: "findById",
+        isStatic: false,
+        isPublicOrOpen: true,
+        isPrivateOrFileprivate: false,
+        parameterTypeNames: ["string"],
+        hasExplicitReturnType: true,
+        returnTypeDescription: "Promise<OrderDTO>",
+        returnTypeNames: ["Promise", "OrderDTO"],
+        returnsVoidLike: false,
+        coordinate: { line: 4, column: 3 },
+      },
+    ],
+  });
+
+  const context = new ProjectContext([
+    makeDeclaration({
+      name: "OrderDTO",
+      kind: NominalKind.Struct,
+      repoRelativePath: "Symphony/Domain/Entities/OrderDTO.ts",
+      layer: ArchitectureLayer.Domain,
+      roleFolder: RoleFolder.None,
+    }),
+    makeDeclaration({
+      name: "OrderDTO",
+      kind: NominalKind.Struct,
+      repoRelativePath: "Symphony/Infrastructure/Translation/DTOs/OrderDTO.ts",
+      layer: ArchitectureLayer.Infrastructure,
+      roleFolder: RoleFolder.InfrastructureTranslationDTOs,
+    }),
+    makeDeclaration({
+      name: "OrdersRepositoryProtocol",
+      kind: NominalKind.Protocol,
+      repoRelativePath: "Symphony/Domain/Protocols/OrdersRepositoryProtocol.ts",
+      layer: ArchitectureLayer.Domain,
+      roleFolder: RoleFolder.DomainProtocols,
+    }),
+  ]);
+
+  const diagnostics = new InfrastructureRepositoriesRoleFitPolicy().evaluate(
+    file,
+    context,
+  );
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]!.ruleID, "infrastructure.repositories.role_fit");
+  assert.equal(diagnostics[0]!.line, 4);
+  assert.ok(diagnostics[0]!.message.includes("OrderDTO"));
+});
+
 test("repositories.role_fit flags Presentation-DTO leak through a public repository parameter", () => {
   const file = makeInfrastructureFile({
     repoRelativePath:
@@ -142,11 +208,70 @@ test("repositories.role_fit flags Presentation-DTO leak through a public reposit
   assert.ok(diagnostics.some((d) => d.message.includes("OrderViewDTO")));
 });
 
+test("repositories.role_fit flags same-file support DTO leak through a public repository return type", () => {
+  const file = makeInfrastructureFile({
+    repoRelativePath: "Symphony/Infrastructure/Repositories/OrderRepository.ts",
+    roleFolder: RoleFolder.InfrastructureRepositories,
+    topLevelDeclarations: [
+      {
+        name: "OrderRepository",
+        kind: NominalKind.Class,
+        inheritedTypeNames: ["OrdersRepositoryProtocol"],
+        memberNames: ["findById"],
+        coordinate: { line: 1, column: 1 },
+      },
+      {
+        name: "OrderDTO",
+        kind: NominalKind.Struct,
+        inheritedTypeNames: [],
+        memberNames: [],
+        coordinate: { line: 12, column: 1 },
+      },
+    ],
+    methodDeclarations: [
+      {
+        enclosingTypeName: "OrderRepository",
+        name: "findById",
+        isStatic: false,
+        isPublicOrOpen: true,
+        isPrivateOrFileprivate: false,
+        parameterTypeNames: ["string"],
+        hasExplicitReturnType: true,
+        returnTypeDescription: "Promise<OrderDTO>",
+        returnTypeNames: ["Promise", "OrderDTO"],
+        returnsVoidLike: false,
+        coordinate: { line: 4, column: 3 },
+      },
+    ],
+  });
+
+  const context = new ProjectContext([
+    makeDeclaration({
+      name: "OrdersRepositoryProtocol",
+      kind: NominalKind.Protocol,
+      repoRelativePath: "Symphony/Domain/Protocols/OrdersRepositoryProtocol.ts",
+      layer: ArchitectureLayer.Domain,
+      roleFolder: RoleFolder.DomainProtocols,
+    }),
+  ]);
+
+  const diagnostics = new InfrastructureRepositoriesRoleFitPolicy().evaluate(
+    file,
+    context,
+  );
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]!.ruleID, "infrastructure.repositories.role_fit");
+  assert.equal(diagnostics[0]!.line, 4);
+  assert.ok(diagnostics[0]!.message.includes("OrderDTO"));
+  assert.ok(diagnostics[0]!.message.includes("same repository file"));
+});
+
 // =============================================================================
 // infrastructure.repositories.role_fit — missing-inward-conformance path
 // =============================================================================
 
-test("repositories.role_fit flags Repository-shaped class with no inward Repository conformance", () => {
+test("repositories.role_fit flags misclassified Repository-shaped class with no inward Repository conformance", () => {
   const file = makeInfrastructureFile({
     repoRelativePath: "Symphony/Infrastructure/Repositories/OrderRepository.ts",
     roleFolder: RoleFolder.InfrastructureRepositories,
@@ -157,6 +282,28 @@ test("repositories.role_fit flags Repository-shaped class with no inward Reposit
         inheritedTypeNames: [], // no inward protocol
         memberNames: [],
         coordinate: { line: 1, column: 7 },
+      },
+      {
+        name: "OrderDTO",
+        kind: NominalKind.Struct,
+        inheritedTypeNames: [],
+        memberNames: [],
+        coordinate: { line: 12, column: 1 },
+      },
+    ],
+    methodDeclarations: [
+      {
+        enclosingTypeName: "OrderRepository",
+        name: "mapOrder",
+        isStatic: false,
+        isPublicOrOpen: false,
+        isPrivateOrFileprivate: false,
+        parameterTypeNames: ["OrderDTO"],
+        hasExplicitReturnType: true,
+        returnTypeDescription: "OrderDTO",
+        returnTypeNames: ["OrderDTO"],
+        returnsVoidLike: false,
+        coordinate: { line: 4, column: 3 },
       },
     ],
   });
@@ -169,10 +316,128 @@ test("repositories.role_fit flags Repository-shaped class with no inward Reposit
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0]!.ruleID, "infrastructure.repositories.role_fit");
   assert.equal(diagnostics[0]!.line, 1);
-  assert.ok(diagnostics[0]!.message.includes("does not declare an inward Repository"));
+  assert.ok(diagnostics[0]!.message.includes("does not appear to act as a concrete repository adapter"));
   for (const marker of RICH_REMEDIATION_MARKERS) {
     assert.ok(diagnostics[0]!.message.includes(marker));
   }
+});
+
+test("repositories.role_fit accepts no-conformance concrete repository with data-access evidence", () => {
+  const file = makeInfrastructureFile({
+    repoRelativePath: "Symphony/Infrastructure/Repositories/PostgresOrdersRepository.ts",
+    roleFolder: RoleFolder.InfrastructureRepositories,
+    topLevelDeclarations: [
+      {
+        name: "PostgresOrdersRepository",
+        kind: NominalKind.Class,
+        inheritedTypeNames: [],
+        memberNames: ["findById"],
+        coordinate: { line: 1, column: 1 },
+      },
+    ],
+    methodDeclarations: [
+      {
+        enclosingTypeName: "PostgresOrdersRepository",
+        name: "findById",
+        isStatic: false,
+        isPublicOrOpen: true,
+        isPrivateOrFileprivate: false,
+        parameterTypeNames: ["string"],
+        hasExplicitReturnType: true,
+        returnTypeDescription: "Promise<Order>",
+        returnTypeNames: ["Promise", "Order"],
+        returnsVoidLike: false,
+        coordinate: { line: 4, column: 3 },
+      },
+    ],
+  });
+
+  const context = new ProjectContext([
+    makeDeclaration({
+      name: "Order",
+      kind: NominalKind.Struct,
+      repoRelativePath: "Symphony/Domain/Entities/Order.ts",
+      layer: ArchitectureLayer.Domain,
+      roleFolder: RoleFolder.None,
+    }),
+  ]);
+
+  const diagnostics = new InfrastructureRepositoriesRoleFitPolicy().evaluate(
+    file,
+    context,
+  );
+
+  assert.equal(diagnostics.length, 0);
+});
+
+test("repositories.role_fit accepts ambiguous Domain boundary evidence when any matching declaration is Domain", () => {
+  const file = makeInfrastructureFile({
+    repoRelativePath: "Symphony/Infrastructure/Repositories/PostgresOrdersRepository.ts",
+    roleFolder: RoleFolder.InfrastructureRepositories,
+    topLevelDeclarations: [
+      {
+        name: "PostgresOrdersRepository",
+        kind: NominalKind.Class,
+        inheritedTypeNames: [],
+        memberNames: ["hydrateOrder"],
+        coordinate: { line: 1, column: 1 },
+      },
+      {
+        name: "OrderMapper",
+        kind: NominalKind.Class,
+        inheritedTypeNames: [],
+        memberNames: [],
+        coordinate: { line: 12, column: 1 },
+      },
+    ],
+    methodDeclarations: [
+      {
+        enclosingTypeName: "PostgresOrdersRepository",
+        name: "hydrateOrder",
+        isStatic: false,
+        isPublicOrOpen: true,
+        isPrivateOrFileprivate: false,
+        parameterTypeNames: ["string"],
+        hasExplicitReturnType: true,
+        returnTypeDescription: "Promise<Order>",
+        returnTypeNames: ["Promise", "Order"],
+        returnsVoidLike: false,
+        coordinate: { line: 4, column: 3 },
+      },
+    ],
+    storedMemberDeclarations: [
+      {
+        enclosingTypeName: "PostgresOrdersRepository",
+        name: "database",
+        typeNames: ["DatabaseClient"],
+        coordinate: { line: 2, column: 3 },
+      },
+    ],
+  });
+
+  const context = new ProjectContext([
+    makeDeclaration({
+      name: "Order",
+      kind: NominalKind.Struct,
+      repoRelativePath: "Symphony/Infrastructure/Repositories/Order.ts",
+      layer: ArchitectureLayer.Infrastructure,
+      roleFolder: RoleFolder.InfrastructureRepositories,
+    }),
+    makeDeclaration({
+      name: "Order",
+      kind: NominalKind.Struct,
+      repoRelativePath: "Symphony/Domain/Entities/Order.ts",
+      layer: ArchitectureLayer.Domain,
+      roleFolder: RoleFolder.None,
+    }),
+  ]);
+
+  const diagnostics = new InfrastructureRepositoriesRoleFitPolicy().evaluate(
+    file,
+    context,
+  );
+
+  assert.equal(diagnostics.length, 0);
 });
 
 test("repositories.role_fit silent on well-formed repository (inward conformance + Domain/Application surface)", () => {
@@ -393,6 +658,9 @@ function makeInfrastructureFile(input: {
   readonly methodDeclarations?: ConstructorParameters<
     typeof ArchitectureFile
   >[0]["methodDeclarations"];
+  readonly storedMemberDeclarations?: ConstructorParameters<
+    typeof ArchitectureFile
+  >[0]["storedMemberDeclarations"];
 }): ArchitectureFile {
   const pathComponents = input.repoRelativePath.split("/");
   return new ArchitectureFile({
@@ -414,7 +682,7 @@ function makeInfrastructureFile(input: {
     methodDeclarations: input.methodDeclarations ?? [],
     constructorDeclarations: [],
     computedPropertyDeclarations: [],
-    storedMemberDeclarations: [],
+    storedMemberDeclarations: input.storedMemberDeclarations ?? [],
     operationalUseOccurrences: [],
     typeReferences: [],
     topLevelDeclarations: input.topLevelDeclarations ?? [],

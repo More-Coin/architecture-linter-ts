@@ -14,6 +14,7 @@ import type { SourceCoordinate } from "../../ValueObjects/SourceCoordinate.ts";
  *   5. `file.computedPropertyDeclarations` — getter/computed property types
  *   6. `file.constructionOccurrences`     — `new Foo(...)` call sites
  *   7. `file.staticMemberAccessOccurrences` — non-call `Foo.bar` accesses (base name only)
+ *   8. `file.memberCallOccurrences` — member calls such as `Foo.bar()` (base name only)
  *
  * Each occurrence carries the canonicalized type name and a precise coordinate.
  * Names are deduplicated within the file but every duplicate produces a
@@ -93,6 +94,13 @@ export function* iterateReferenceOccurrences(
     yield {
       name: canonicalReferenceTypeName(staticAccess.baseName),
       coordinate: staticAccess.coordinate,
+    };
+  }
+
+  for (const memberCall of file.memberCallOccurrences) {
+    yield {
+      name: canonicalReferenceTypeName(memberCall.baseName),
+      coordinate: memberCall.coordinate,
     };
   }
 }

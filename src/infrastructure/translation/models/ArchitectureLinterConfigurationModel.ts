@@ -52,6 +52,34 @@ export class ArchitectureLinterConfigurationModel {
       moduleAliases,
       disabledRuleIDs: value.disabledRuleIDs,
       disabledRulePrefixes: value.disabledRulePrefixes,
+      domainVocabularyDeniedFragments: parseOptionalStringArray(
+        value.domainVocabularyDeniedFragments,
+        DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION.domainVocabularyDeniedFragments,
+      ),
+      domainVocabularyAllowedIdentifiers: parseOptionalStringArray(
+        value.domainVocabularyAllowedIdentifiers,
+        DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION.domainVocabularyAllowedIdentifiers,
+      ),
+      domainOuterArtifactFragments: parseOptionalStringArray(
+        value.domainOuterArtifactFragments,
+        DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION.domainOuterArtifactFragments,
+      ),
+      storageNamespacePrefixes: parseOptionalStringArray(
+        value.storageNamespacePrefixes,
+        DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION.storageNamespacePrefixes,
+      ),
+      providerSurfaceTerms: parseOptionalStringArray(
+        value.providerSurfaceTerms,
+        DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION.providerSurfaceTerms,
+      ),
+      maxServiceUseCaseDependencies: parseOptionalNumber(
+        value.maxServiceUseCaseDependencies,
+        DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION.maxServiceUseCaseDependencies,
+      ),
+      maxUseCasesPerServiceMethod: parseOptionalNumber(
+        value.maxUseCasesPerServiceMethod,
+        DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION.maxUseCasesPerServiceMethod,
+      ),
     };
   }
 }
@@ -138,4 +166,15 @@ function isStringArray(value: unknown): value is string[] {
   return (
     Array.isArray(value) && value.every((item) => typeof item === "string")
   );
+}
+
+function parseOptionalStringArray(
+  value: unknown,
+  fallback: readonly string[],
+): readonly string[] {
+  return isStringArray(value) ? value : fallback;
+}
+
+function parseOptionalNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" ? value : fallback;
 }

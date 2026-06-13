@@ -9,6 +9,7 @@ import { FileClassification } from "../../src/Domain/ValueObjects/FileClassifica
 import { NominalKind } from "../../src/Domain/ValueObjects/NominalKind.ts";
 import { ProjectContext } from "../../src/Domain/ValueObjects/ProjectContext.ts";
 import { RoleFolder } from "../../src/Domain/ValueObjects/RoleFolder.ts";
+import { ArchitectureLinterConfigurationModel } from "../../src/Infrastructure/translation/models/ArchitectureLinterConfigurationModel.ts";
 
 test("diagnostics location policy uses configured diagnostics subpath", () => {
   const policy = new TestsDiagnosticsLocationPolicy({
@@ -72,6 +73,40 @@ test("diagnostics location policy accepts nested package test root", () => {
   const diagnostics = policy.evaluate(file, new ProjectContext([]));
 
   assert.equal(diagnostics.length, 0);
+});
+
+test("configuration model parses domain outer artifact string literal extensions", () => {
+  const configuration = new ArchitectureLinterConfigurationModel().toDomain(
+    JSON.stringify({
+      ...DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+      domainOuterArtifactFragments: ["vendor claim"],
+      storageNamespacePrefixes: ["tenant.cache"],
+      providerSurfaceTerms: ["planetscale"],
+      maxServiceUseCaseDependencies: 10,
+      maxUseCasesPerServiceMethod: 6,
+    }),
+  );
+
+  assert.deepEqual(configuration?.domainOuterArtifactFragments, [
+    "vendor claim",
+  ]);
+  assert.deepEqual(configuration?.storageNamespacePrefixes, ["tenant.cache"]);
+  assert.deepEqual(configuration?.providerSurfaceTerms, ["planetscale"]);
+  assert.equal(configuration?.maxServiceUseCaseDependencies, 10);
+  assert.equal(configuration?.maxUseCasesPerServiceMethod, 6);
+});
+
+test("configuration model defaults Application Service cardinality caps", () => {
+  const configuration = new ArchitectureLinterConfigurationModel().toDomain(
+    JSON.stringify({
+      ...DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+      maxServiceUseCaseDependencies: undefined,
+      maxUseCasesPerServiceMethod: undefined,
+    }),
+  );
+
+  assert.equal(configuration?.maxServiceUseCaseDependencies, 8);
+  assert.equal(configuration?.maxUseCasesPerServiceMethod, 5);
 });
 
 function makeFile(input: {

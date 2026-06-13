@@ -1,4 +1,8 @@
 import type { ArchitecturePolicyProtocol } from "../Protocols/ArchitecturePolicyProtocol.ts";
+import {
+  DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+  type ArchitectureLinterConfiguration,
+} from "../ValueObjects/ArchitectureLinterConfiguration.ts";
 import { ArchitectureLayer } from "../ValueObjects/ArchitectureLayer.ts";
 import type { ArchitectureComputedPropertyDeclaration } from "../ValueObjects/ArchitectureComputedPropertyDeclaration.ts";
 import type { ArchitectureDiagnostic } from "../ValueObjects/ArchitectureDiagnostic.ts";
@@ -48,12 +52,12 @@ export class ApplicationOuterLayerReferencePolicy
       }
       seenNames.add(reference.name);
 
-      const declaration = context.uniqueDeclaration(reference.name);
-      if (
-        !declaration ||
-        (declaration.layer !== ArchitectureLayer.Presentation &&
-          declaration.layer !== ArchitectureLayer.App)
-      ) {
+      const declaration = context.resolvedDeclarations(reference.name).find(
+        (candidate) =>
+          candidate.layer === ArchitectureLayer.Presentation ||
+          candidate.layer === ArchitectureLayer.App,
+      );
+      if (!declaration) {
         continue;
       }
 
@@ -620,6 +624,173 @@ export class ApplicationContractsErrorTaxonomyPolicy
   }
 }
 
+export class ApplicationContractsPassiveCarrierSurfacePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.contracts.passive_carrier_surface";
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isApplicationContractFile) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+
+    for (const declaration of file.storedMemberDeclarations) {
+      if (!isContractStaticRegistryMember(declaration)) {
+        continue;
+      }
+
+      diagnostics.push(
+        contractPassiveCarrierDiagnostic(
+          file,
+          declaration.enclosingTypeName,
+          declaration.name,
+          declaration.coordinate,
+        ),
+      );
+    }
+
+    for (const declaration of file.topLevelValueDeclarations) {
+      if (!isContractTopLevelRegistryValue(declaration)) {
+        continue;
+      }
+
+      diagnostics.push(
+        contractPassiveCarrierDiagnostic(
+          file,
+          file.classification.fileStem,
+          declaration.name,
+          declaration.coordinate,
+        ),
+      );
+    }
+
+    for (const declaration of file.methodDeclarations) {
+      if (
+        declaration.name.startsWith("make") ||
+        declaration.name.startsWith("build") ||
+        (declaration.isStatic && declaration.isPrivateOrFileprivate)
+      ) {
+        diagnostics.push(
+          contractPassiveCarrierDiagnostic(
+            file,
+            declaration.enclosingTypeName,
+            declaration.name,
+            declaration.coordinate,
+          ),
+        );
+      }
+    }
+
+    for (const occurrence of file.constructionOccurrences) {
+      if (!isIntlConstructionOccurrence(occurrence.typeName)) {
+        continue;
+      }
+
+      diagnostics.push(
+        contractPassiveCarrierDiagnostic(
+          file,
+          file.classification.fileStem,
+          occurrence.typeName === "Intl" ? "Intl.*" : occurrence.typeName,
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    for (const occurrence of file.staticMemberAccessOccurrences) {
+      if (occurrence.baseName !== "Intl") {
+        continue;
+      }
+
+      diagnostics.push(
+        contractPassiveCarrierDiagnostic(
+          file,
+          file.classification.fileStem,
+          `Intl.${occurrence.memberName}`,
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
+/**
+ * `application.contract_registry_access` — Application Services and UseCases
+ * must not read global registry or fixture state from Application contracts.
+ * Mirrors Swift's `ApplicationContractRegistryAccessPolicy`.
+ */
+export class ApplicationContractRegistryAccessPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.contract_registry_access";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (
+      file.classification.roleFolder !== RoleFolder.ApplicationServices &&
+      file.classification.roleFolder !== RoleFolder.ApplicationUseCases
+    ) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const role =
+      file.classification.roleFolder === RoleFolder.ApplicationServices
+        ? "Services"
+        : "UseCases";
+
+    for (const occurrence of file.staticMemberAccessOccurrences) {
+      if (!isContractRegistryStaticMemberName(occurrence.memberName)) {
+        continue;
+      }
+
+      const baseDeclaration = applicationContractDeclarationNamed(
+        occurrence.baseName,
+        context,
+      );
+      if (!baseDeclaration) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          ApplicationContractRegistryAccessPolicy.ruleID,
+          richRemediationMessage({
+            summary: `Application ${role} file accesses global contract state '${occurrence.baseName}.${occurrence.memberName}' from ${baseDeclaration.repoRelativePath} instead of an injected port.`,
+            categories: [
+              "global registry singleton consumed through a contract static, bypassing a port seam",
+              "embedded test-fixture catalog driven from production workflow code",
+              "hidden dependency no initializer declares and no composition root can substitute",
+            ],
+            signs: [
+              "a static member access whose base resolves to an Application/Contracts declaration and whose member is current/shared/live/instance/standard or contains 'fixture'",
+              "a port protocol covering the same capability exists but is not stored",
+              "the accessed data includes named test payloads",
+            ],
+            architecturalNote:
+              "Services and UseCases receive every collaborator through their initializers so the composition root owns substitution and tests need no global state. A contract static like .current is a service locator in contract clothing, and fixture catalogs reached from production code mean test evidence ships in the app binary.",
+            destination:
+              "An Application/Ports/Protocols seam injected into the Service or UseCase, with registry data behind an Infrastructure adapter; fixture catalogs belong in the test target.",
+            decomposition:
+              "Define or reuse the port protocol covering the accessed capability, inject it through the initializer, move registry literals into the Infrastructure adapter implementing the port, move fixture members into tests, then delete the contract static access.",
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
 export class ApplicationProtocolPlacementPolicy
   implements ArchitecturePolicyProtocol
 {
@@ -654,6 +825,137 @@ export class ApplicationProtocolPlacementPolicy
         ),
       ];
     });
+  }
+}
+
+export class ApplicationProviderAgnosticNamingPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.provider_agnostic_naming";
+  private readonly providerTerms: ReadonlySet<string>;
+
+  constructor(
+    configuration: ArchitectureLinterConfiguration = DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+  ) {
+    this.providerTerms = new Set(
+      [
+        ...DEFAULT_APPLICATION_PROVIDER_SURFACE_TERMS,
+        ...configuration.providerSurfaceTerms,
+      ]
+        .map(normalizedProviderTerm)
+        .filter(isSupportedProviderTerm),
+    );
+  }
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isApplication) {
+      return [];
+    }
+
+    return allNominalDeclarations(file).flatMap((declaration) => {
+      const matchedTerm = firstProviderTermInIdentifier(
+        declaration.name,
+        this.providerTerms,
+      );
+      if (!matchedTerm) {
+        return [];
+      }
+
+      return [
+        file.diagnostic(
+          ApplicationProviderAgnosticNamingPolicy.ruleID,
+          richRemediationMessage({
+            summary: `Application declaration '${declaration.name}' embeds vendor/provider vocabulary ('${matchedTerm}'), but Application seams must stay provider-agnostic.`,
+            categories: [
+              "persistence, cloud, runtime, payment, or framework concept leaked upward into an Application port or contract name",
+              "vendor-specific verification harness dressed as an architecture seam",
+              "dead provider-named scaffolding with no production consumer",
+            ],
+            signs: [
+              "a top-level or nested Application type name contains a provider or framework token at an identifier segment boundary",
+              "the only implementation or conformance lives in Infrastructure or tests",
+              "the contract models provider mechanics rather than application meaning",
+            ],
+            architecturalNote:
+              "Application ports and contracts name capabilities, not providers. Vendor names belong on Infrastructure adapters, repositories, gateways, and configuration where the provider is the point.",
+            destination:
+              "Rename the Application seam with capability or domain terms, keeping provider vocabulary only on the Infrastructure implementor.",
+            decomposition:
+              "Determine whether production code consumes the seam; if it does, rename the protocol or contract to capability vocabulary and update conformers; if it is only a harness, move it to tests or delete it; then re-run the linter.",
+          }),
+          declaration.coordinate,
+        ),
+      ];
+    });
+  }
+}
+
+export class ApplicationPortProtocolConformancePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.port_protocol_conformance";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isApplication) {
+      return [];
+    }
+
+    const conformances = applicationPortProtocolConformances(file, context);
+    const conformingNames = new Set(
+      conformances.map((conformance) => conformance.declName),
+    );
+    const selfConstructedNames = new Set(
+      file.constructionOccurrences
+        .map((occurrence) => canonicalReferenceTypeName(occurrence.typeName))
+        .filter((typeName) => conformingNames.has(typeName)),
+    );
+
+    const diagnostics: ArchitectureDiagnostic[] = conformances.map((conformance) =>
+      file.diagnostic(
+        ApplicationPortProtocolConformancePolicy.ruleID,
+        applicationPortProtocolConformanceMessage({
+          typeName: conformance.declName,
+          protocolName: conformance.protocolName,
+          selfConstructed: selfConstructedNames.has(conformance.declName),
+          ambiguous: conformance.isAmbiguous,
+        }),
+        conformance.coordinate,
+      ),
+    );
+
+    for (const occurrence of file.constructionOccurrences) {
+      const typeName = canonicalReferenceTypeName(occurrence.typeName);
+      const localConformance = conformances.find(
+        (conformance) => conformance.declName === typeName,
+      );
+      const projectConformance =
+        localConformance ?? projectDeclarationApplicationPortConformance(typeName, context);
+
+      if (!projectConformance) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          ApplicationPortProtocolConformancePolicy.ruleID,
+          applicationPortProtocolConformanceMessage({
+            typeName,
+            protocolName: projectConformance.protocolName,
+            selfConstructed: true,
+            ambiguous: projectConformance.isAmbiguous,
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
   }
 }
 
@@ -1393,14 +1695,32 @@ export class ApplicationUseCasesServiceReferencePolicy
 
     const diagnostics: ArchitectureDiagnostic[] = [];
     const seenNames = new Set<string>();
+    const occurrences = [
+      ...file.typeReferences.map((reference) => ({
+        name: reference.name,
+        coordinate: reference.coordinate,
+      })),
+      ...file.constructionOccurrences.map((occurrence) => ({
+        name: occurrence.typeName,
+        coordinate: occurrence.coordinate,
+      })),
+      ...file.staticMemberAccessOccurrences.map((occurrence) => ({
+        name: occurrence.baseName,
+        coordinate: occurrence.coordinate,
+      })),
+    ];
 
-    for (const reference of file.typeReferences) {
-      if (seenNames.has(reference.name)) {
+    for (const occurrence of occurrences) {
+      if (seenNames.has(occurrence.name)) {
         continue;
       }
-      seenNames.add(reference.name);
+      seenNames.add(occurrence.name);
 
-      const declaration = context.uniqueDeclaration(reference.name);
+      const declaration = context.resolvedDeclarations(occurrence.name).find(
+        (candidate) =>
+          candidate.roleFolder === RoleFolder.ApplicationServices &&
+          this.isServiceLike(candidate),
+      );
       if (
         !declaration ||
         declaration.roleFolder !== RoleFolder.ApplicationServices ||
@@ -1413,10 +1733,10 @@ export class ApplicationUseCasesServiceReferencePolicy
         file.diagnostic(
           ApplicationUseCasesServiceReferencePolicy.ruleID,
           applicationRemediationMessage(
-            `Application use case '${file.repoRelativePath}' references Application service '${reference.name}' from '${declaration.repoRelativePath}'.`,
+            `Application use case '${file.repoRelativePath}' references Application service '${occurrence.name}' from '${declaration.repoRelativePath}'.`,
             "Keep use cases focused on one operation and move broader coordination up into Application services.",
           ),
-          reference.coordinate,
+          occurrence.coordinate,
         ),
       );
     }
@@ -1846,7 +2166,10 @@ export class ApplicationServicesPortProtocolReferencePolicy
       }
       seenNames.add(occurrence.name);
 
-      const declaration = context.uniqueDeclaration(occurrence.name);
+      const declaration = context.resolvedDeclarations(occurrence.name).find(
+        (candidate) =>
+          isForbiddenApplicationServiceDependency(occurrence.name, candidate),
+      );
       if (!isForbiddenApplicationServiceDependency(occurrence.name, declaration)) {
         continue;
       }
@@ -1913,8 +2236,10 @@ export class ApplicationServicesServiceReferencePolicy
       }
       seenNames.add(occurrence.name);
 
-      const declaration = context.uniqueDeclaration(occurrence.name);
-      if (!declaration || declaration.roleFolder !== RoleFolder.ApplicationServices) {
+      const declaration = context.resolvedDeclarations(occurrence.name).find(
+        (candidate) => candidate.roleFolder === RoleFolder.ApplicationServices,
+      );
+      if (!declaration) {
         continue;
       }
 
@@ -2059,6 +2384,109 @@ export class ApplicationServicesDependencyResolutionPolicy
 }
 
 /**
+ * `application.services.dependency_cardinality` — Application Services should
+ * coordinate focused workflows over a bounded set of injected UseCases.
+ * Mirrors Swift's `ApplicationServicesDependencyCardinalityPolicy`.
+ */
+export class ApplicationServicesDependencyCardinalityPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "application.services.dependency_cardinality";
+
+  private readonly maxServiceUseCaseDependencies: number;
+  private readonly maxUseCasesPerServiceMethod: number;
+
+  constructor(
+    configuration: ArchitectureLinterConfiguration = DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+  ) {
+    this.maxServiceUseCaseDependencies =
+      configuration.maxServiceUseCaseDependencies;
+    this.maxUseCasesPerServiceMethod =
+      configuration.maxUseCasesPerServiceMethod;
+  }
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isApplicationServiceFile) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+
+    for (const declaration of file.topLevelDeclarations) {
+      if (
+        declaration.kind === NominalKind.Protocol ||
+        !declaration.name.endsWith("Service")
+      ) {
+        continue;
+      }
+
+      const dependencyBindings = applicationServiceUseCaseDependencyBindings(
+        file,
+        context,
+        declaration.name,
+      );
+      const dependencyCount = new Set(dependencyBindings.values()).size;
+
+      if (dependencyCount > this.maxServiceUseCaseDependencies) {
+        diagnostics.push(
+          file.diagnostic(
+            ApplicationServicesDependencyCardinalityPolicy.ruleID,
+            applicationServiceDependencyCardinalityMessage({
+              serviceName: declaration.name,
+              dependencyCount,
+              dependencyCap: this.maxServiceUseCaseDependencies,
+              methodCap: this.maxUseCasesPerServiceMethod,
+            }),
+            declaration.coordinate,
+          ),
+        );
+      }
+
+      for (const method of file.methodDeclarations) {
+        if (
+          method.enclosingTypeName !== declaration.name ||
+          method.isStatic ||
+          method.isPrivateOrFileprivate
+        ) {
+          continue;
+        }
+
+        const usedDependencies =
+          useCaseDependenciesUsedByApplicationServiceMethod(
+            method.name,
+            declaration.name,
+            dependencyBindings,
+            file,
+            new Set(),
+          );
+
+        if (usedDependencies.size > this.maxUseCasesPerServiceMethod) {
+          diagnostics.push(
+            file.diagnostic(
+              ApplicationServicesDependencyCardinalityPolicy.ruleID,
+              applicationServiceDependencyCardinalityMessage({
+                serviceName: declaration.name,
+                dependencyCount,
+                dependencyCap: this.maxServiceUseCaseDependencies,
+                methodName: method.name,
+                methodCount: usedDependencies.size,
+                methodCap: this.maxUseCasesPerServiceMethod,
+              }),
+              method.coordinate,
+            ),
+          );
+        }
+      }
+    }
+
+    return diagnostics;
+  }
+}
+
+/**
  * `application.usecases.usecase_reference` — UseCases must not depend on
  * other UseCases. Sequencing belongs in Application/Services. Mirrors Swift's
  * `ApplicationUseCasesUseCaseReferencePolicy`.
@@ -2091,7 +2519,9 @@ export class ApplicationUseCasesUseCaseReferencePolicy
       }
       seenNames.add(occurrence.name);
 
-      const declaration = context.uniqueDeclaration(occurrence.name);
+      const declaration = context.resolvedDeclarations(occurrence.name).find(
+        (candidate) => candidate.roleFolder === RoleFolder.ApplicationUseCases,
+      );
       if (!declaration || declaration.roleFolder !== RoleFolder.ApplicationUseCases) {
         continue;
       }
@@ -2201,8 +2631,10 @@ export class ApplicationUseCasesBoundaryTypeReferencePolicy
       seenNames.add(occurrence.name);
 
       const platformFlag = isForbiddenUseCaseBoundaryTypeName(occurrence.name);
-      const declaration = context.uniqueDeclaration(occurrence.name);
-      const layerFlag = declaration && isForbiddenUseCaseBoundaryLayer(declaration.layer);
+      const declaration = context.resolvedDeclarations(occurrence.name).find(
+        (candidate) => isForbiddenUseCaseBoundaryLayer(candidate.layer),
+      );
+      const layerFlag = declaration !== undefined;
 
       if (!platformFlag && !layerFlag) {
         continue;
@@ -2238,7 +2670,9 @@ export class ApplicationUseCasesBoundaryTypeReferencePolicy
   }
 }
 
-export function makeApplicationArchitecturePolicies(): readonly ArchitecturePolicyProtocol[] {
+export function makeApplicationArchitecturePolicies(
+  configuration: ArchitectureLinterConfiguration = DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+): readonly ArchitecturePolicyProtocol[] {
   return [
     new ApplicationOuterLayerReferencePolicy(),
     new ApplicationPortProtocolsShapePolicy(),
@@ -2249,9 +2683,13 @@ export function makeApplicationArchitecturePolicies(): readonly ArchitecturePoli
     new ApplicationContractsOwnershipPolicy(),
     new ApplicationContractsNoStateTransitionSurfacePolicy(),
     new ApplicationContractsErrorTaxonomyPolicy(),
+    new ApplicationContractsPassiveCarrierSurfacePolicy(),
     new ApplicationPassiveDependencyResolutionPolicy(),
+    new ApplicationContractRegistryAccessPolicy(),
     new ApplicationProtocolPlacementPolicy(),
+    new ApplicationPortProtocolConformancePolicy(),
     new ApplicationAmbiguousRoleNamePolicy(),
+    new ApplicationProviderAgnosticNamingPolicy(configuration),
     new ApplicationErrorsShapePolicy(),
     new ApplicationErrorsPlacementPolicy(),
     new ApplicationServicesNoProtocolsPolicy(),
@@ -2261,6 +2699,7 @@ export function makeApplicationArchitecturePolicies(): readonly ArchitecturePoli
     new ApplicationServicesUseCaseConstructionPolicy(),
     new ApplicationServicesDependencyResolutionPolicy(),
     new ApplicationServicesNoUseCasesPolicy(),
+    new ApplicationServicesDependencyCardinalityPolicy(configuration),
     new ApplicationUseCasesShapePolicy(),
     new ApplicationUseCasesNoProtocolsPolicy(),
     new ApplicationUseCasesUseCaseReferencePolicy(),
@@ -2295,6 +2734,14 @@ const GENERIC_USE_CASE_OPERATION_METHOD_NAMES = new Set([
   "execute",
   "run",
   "perform",
+]);
+
+const APPLICATION_CONTRACT_REGISTRY_STATIC_MEMBER_NAMES = new Set([
+  "current",
+  "shared",
+  "live",
+  "instance",
+  "standard",
 ]);
 
 const EXPLICIT_CONTRACT_STATE_TRANSITION_PREFIXES = [
@@ -2356,6 +2803,14 @@ const APPLICATION_CONTRACT_ERROR_TAXONOMY_HELPER_PREFIXES = [
   "normalize",
 ];
 
+const APPLICATION_CONTRACT_STATIC_REGISTRY_MEMBER_NAMES = new Set([
+  "current",
+  "shared",
+  "live",
+  "instance",
+  "standard",
+]);
+
 const PROVIDER_SPECIFIC_SURFACE_TERMS = new Set([
   "api key",
   "apikey",
@@ -2380,6 +2835,46 @@ const PROVIDER_SPECIFIC_SURFACE_TERMS = new Set([
   "workflowpath",
   "workflow.md",
 ]);
+
+const DEFAULT_APPLICATION_PROVIDER_SURFACE_TERMS = [
+  "prisma",
+  "typeorm",
+  "sequelize",
+  "postgres",
+  "postgresql",
+  "mysql",
+  "mariadb",
+  "sqlite",
+  "mongodb",
+  "mongo",
+  "dynamodb",
+  "redis",
+  "s3",
+  "firebase",
+  "firestore",
+  "supabase",
+  "planetscale",
+  "neon",
+  "vercel",
+  "netlify",
+  "aws",
+  "azure",
+  "gcp",
+  "cloudflare",
+  "nextjs",
+  "react",
+  "express",
+  "nestjs",
+  "fastify",
+  "stripe",
+  "paypal",
+  "auth0",
+  "clerk",
+  "sendgrid",
+  "twilio",
+  "openai",
+  "anthropic",
+] as const;
 
 const APPLICATION_SERVICES_TECHNICAL_PROJECTION_EMIT_MEMBER_NAMES = new Set([
   "emit",
@@ -2425,6 +2920,39 @@ function applicationContractStateTransitionSurfaceMessage(
   return applicationRemediationMessage(
     `${surfaceDescription} appears to define next-state or progression semantics on a contract surface.`,
     "Move next-state semantics to Application/StateTransitions and keep contract surfaces observational only.",
+  );
+}
+
+function contractPassiveCarrierDiagnostic(
+  file: ArchitectureFile,
+  typeName: string,
+  offender: string,
+  coordinate: { readonly line: number; readonly column: number },
+): ArchitectureDiagnostic {
+  return file.diagnostic(
+    ApplicationContractsPassiveCarrierSurfacePolicy.ruleID,
+    richRemediationMessage({
+      summary: `Application contract '${typeName}' carries non-passive surface ('${offender}'), but contracts are passive data carriers.`,
+      categories: [
+        "canonical registry or fixture catalog baked into a contract as a static singleton",
+        "projection or translation pipeline attached to a contract",
+        "policy data duplicated as private static helpers across contract files",
+        "display formatting on a contract surface",
+      ],
+      signs: [
+        "a static contract member named current/shared/live/instance/standard",
+        "a method named make*/build* on a contract type",
+        "a private static method declared in an Application/Contracts file",
+        "Intl construction or static Intl access occurring in a contract file",
+      ],
+      architecturalNote:
+        "Contracts may answer narrow observational questions about data they hold, but the moment they own registries, factories, translation pipelines, policy fragment lists, or display formatting, boundary data becomes behavior that callers can reach without injection.",
+      destination:
+        "Domain/Policies for validation or sanitization rules; the owning Application/UseCases or Services for derivation factories and projection assembly; an Infrastructure adapter behind an existing port for registry data; the test target for fixture catalogs; Presentation for formatting.",
+      decomposition:
+        "Move the flagged member to the owning role, replace static registry reads with an injected port, keep raw values on the contract, and format at the presentation edge before re-running the linter.",
+    }),
+    coordinate,
   );
 }
 
@@ -2477,6 +3005,39 @@ function applicationContractOwnershipMessage(
     `${surfaceDescription} attaches behavior to Application contract type '${contractName}' from a non-owning file.`,
     `If the behavior is observational and collaborator-free, move it to the owning contract file at ${ownerPath}; otherwise move it to the non-contract surface that owns the work.`,
   );
+}
+
+function applicationServiceDependencyCardinalityMessage(input: {
+  readonly serviceName: string;
+  readonly dependencyCount: number;
+  readonly dependencyCap: number;
+  readonly methodName?: string;
+  readonly methodCount?: number;
+  readonly methodCap: number;
+}): string {
+  const methodSummary = input.methodName
+    ? `; method '${input.methodName}' coordinates ${input.methodCount ?? 0} distinct UseCases in one operation (cap: ${input.methodCap})`
+    : "";
+
+  return richRemediationMessage({
+    summary: `Application service '${input.serviceName}' stores ${input.dependencyCount} injected UseCase dependencies (cap: ${input.dependencyCap})${methodSummary}, which is god-facade shape rather than focused workflow orchestration.`,
+    categories: [
+      "god-object service facade accreting every workflow behind one type",
+      "evidence or report mega-workflow compiled into the production service surface",
+      "optional-defaulted dependencies that turn missed wiring into runtime errors",
+    ],
+    signs: [
+      "non-static stored members resolving to Application/UseCases declarations exceed the configured cap on one service declaration",
+      "a single non-private service method operationally uses more than the configured per-method cap of distinct injected UseCases, including through private helpers",
+      "sibling services hold far fewer dependencies each",
+    ],
+    architecturalNote:
+      "Application services orchestrate one focused workflow over a small set of injected UseCases; when one service fronts every Presentation workflow, responsibility spread is unbounded, wiring is harder to reason about, and inline policy expressions accumulate where no rule can see them.",
+    destination:
+      "multiple per-workflow types in Application/Services, each owning only the UseCases its workflow needs, with required dependencies; inline policy expressions extracted to Domain/Policies.",
+    decomposition:
+      "1) group the service's methods by workflow; 2) create one Application/Services type per group, moving each method and exactly the UseCases it uses; 3) make every moved dependency required and update the composition root to wire each new service; 4) extract inline policy decisions into Domain/Policies invoked by the new services; 5) update Presentation injection sites to receive the specific service each consumer needs and re-run the linter.",
+  });
 }
 
 /**
@@ -2540,6 +3101,23 @@ function isApplicationContractDeclaration(
   );
 }
 
+function applicationContractDeclarationNamed(
+  name: string,
+  context: ProjectContext,
+): IndexedDeclaration | undefined {
+  return context.declarations.find(
+    (declaration) =>
+      declaration.name === name && isApplicationContractDeclaration(declaration),
+  );
+}
+
+function isContractRegistryStaticMemberName(memberName: string): boolean {
+  return (
+    APPLICATION_CONTRACT_REGISTRY_STATIC_MEMBER_NAMES.has(memberName) ||
+    memberName.toLowerCase().includes("fixture")
+  );
+}
+
 function isForbiddenApplicationContractDependencyTypeName(
   typeName: string,
   context: ProjectContext,
@@ -2577,6 +3155,193 @@ function canonicalArchitectureTypeName(typeName: string): string {
     .replaceAll("?", "")
     .replaceAll("!", "")
     .trim();
+}
+
+function allNominalDeclarations(
+  file: ArchitectureFile,
+): readonly (ArchitectureTopLevelDeclaration | ArchitectureNestedNominalDeclaration)[] {
+  return [...file.topLevelDeclarations, ...file.nestedNominalDeclarations];
+}
+
+export interface ApplicationPortConformanceFinding {
+  readonly declName: string;
+  readonly protocolName: string;
+  readonly protocolPath: string;
+  readonly coordinate: ArchitectureTopLevelDeclaration["coordinate"];
+  readonly isAmbiguous: boolean;
+}
+
+export function applicationPortProtocolConformances(
+  file: ArchitectureFile,
+  context: ProjectContext,
+  allowedProtocolRoles: ReadonlySet<RoleFolder> = new Set([
+    RoleFolder.ApplicationPortsProtocols,
+  ]),
+): readonly ApplicationPortConformanceFinding[] {
+  return allNominalDeclarations(file).flatMap((declaration) => {
+    if (declaration.kind === NominalKind.Protocol) {
+      return [];
+    }
+
+    return declaration.inheritedTypeNames.flatMap((inheritedName) => {
+      const protocolName = canonicalReferenceTypeName(inheritedName);
+      const matchedDeclarations = declarationsNamed(protocolName, context);
+      const protocolDeclaration = matchedDeclarations.find(
+        (candidate) =>
+          candidate.kind === NominalKind.Protocol &&
+          allowedProtocolRoles.has(candidate.roleFolder),
+      );
+
+      if (!protocolDeclaration) {
+        return [];
+      }
+
+      return [
+        {
+          declName: declaration.name,
+          protocolName,
+          protocolPath: protocolDeclaration.repoRelativePath,
+          coordinate: declaration.coordinate,
+          isAmbiguous: matchedDeclarations.length > 1,
+        },
+      ];
+    });
+  });
+}
+
+function projectDeclarationApplicationPortConformance(
+  name: string,
+  context: ProjectContext,
+): { readonly protocolName: string; readonly isAmbiguous: boolean } | undefined {
+  const matchedDeclarations = declarationsNamed(name, context);
+  for (const declaration of matchedDeclarations) {
+    if (declaration.kind === NominalKind.Protocol) {
+      continue;
+    }
+
+    for (const inheritedName of declaration.inheritedTypeNames) {
+      const protocolName = canonicalReferenceTypeName(inheritedName);
+      if (isApplicationPortProtocolDeclaration(protocolName, context)) {
+        return {
+          protocolName,
+          isAmbiguous: matchedDeclarations.length > 1,
+        };
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function isApplicationPortProtocolDeclaration(
+  name: string,
+  context: ProjectContext,
+): boolean {
+  return declarationsNamed(name, context).some(
+    (declaration) =>
+      declaration.kind === NominalKind.Protocol &&
+      declaration.roleFolder === RoleFolder.ApplicationPortsProtocols,
+  );
+}
+
+function declarationsNamed(
+  name: string,
+  context: ProjectContext,
+): readonly IndexedDeclaration[] {
+  return context.resolvedDeclarations(name);
+}
+
+function applicationPortProtocolConformanceMessage(input: {
+  readonly typeName: string;
+  readonly protocolName: string;
+  readonly selfConstructed: boolean;
+  readonly ambiguous: boolean;
+}): string {
+  return richRemediationMessage({
+    summary: `Application type '${input.typeName}' conforms to Application port protocol '${input.protocolName}'${input.selfConstructed ? " and is constructed inside Application" : ""}, but port implementations belong in Infrastructure and are wired by the composition root${input.ambiguous ? "; the name is ambiguous and one matching declaration violates the Application boundary" : ""}.`,
+    categories: [
+      "concrete port implementation embedded in an Application file",
+      "use case that self-supplies its own port dependency via a defaulted initializer",
+      "decorative port seam with no outer-layer implementor",
+    ],
+    signs: [
+      "a non-protocol declaration in an Application file lists an Application/Ports/Protocols protocol in its inheritance clause",
+      "the conforming type is nested or same-file private, invisible to use-case shape rules",
+      "a construction of the conforming type appears inside the Application file itself",
+    ],
+    architecturalNote:
+      "UseCases express behavior through injected port protocols and stay thin. When an Application file both declares or constructs a conforming implementation, the seam stops being a boundary and abstraction checks can pass vacuously; pure deterministic algorithms are policy, not boundary adapters.",
+    destination:
+      "Infrastructure/PortAdapters for the conforming type, App/DependencyInjection for its construction and injection, and Domain/Policies for extracted pure decision logic.",
+    decomposition: `Move '${input.typeName}' to Infrastructure/PortAdapters and rename it '<Capability>PortAdapter'. Delete any self-constructing initializer, construct and inject the adapter in App/DependencyInjection, extract pure decision math into Domain/Policies, then re-run the linter.`,
+  });
+}
+
+function firstProviderTermInIdentifier(
+  identifier: string,
+  providerTerms: ReadonlySet<string>,
+): string | undefined {
+  const segments = identifierSegments(identifier);
+  for (let start = 0; start < segments.length; start += 1) {
+    let candidate = "";
+    for (let end = start; end < segments.length; end += 1) {
+      candidate += segments[end];
+      if (providerTerms.has(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function identifierSegments(identifier: string): readonly string[] {
+  return identifier
+    .split(/[^A-Za-z0-9]+/)
+    .flatMap((part) =>
+      part.match(/[A-Z]+(?=[A-Z][a-z]|[0-9]|$)|[A-Z]?[a-z]+|[0-9]+/g) ?? [],
+    )
+    .map((segment) => segment.toLowerCase())
+    .filter((segment) => segment.length > 0);
+}
+
+function normalizedProviderTerm(term: string): string {
+  return term.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function isSupportedProviderTerm(term: string): boolean {
+  return term === "s3" || term.length >= 3;
+}
+
+function isContractStaticRegistryMember(
+  declaration: ArchitectureStoredMemberDeclaration,
+): boolean {
+  if (
+    !declaration.isStatic ||
+    !APPLICATION_CONTRACT_STATIC_REGISTRY_MEMBER_NAMES.has(declaration.name)
+  ) {
+    return false;
+  }
+
+  return (
+    declaration.typeNames.length === 0 ||
+    declaration.typeNames
+      .map(canonicalArchitectureTypeName)
+      .includes(declaration.enclosingTypeName)
+  );
+}
+
+function isContractTopLevelRegistryValue(
+  declaration: ArchitectureTopLevelValueDeclaration,
+): boolean {
+  return (
+    declaration.kind !== "function" &&
+    APPLICATION_CONTRACT_STATIC_REGISTRY_MEMBER_NAMES.has(declaration.name)
+  );
+}
+
+function isIntlConstructionOccurrence(typeName: string): boolean {
+  return typeName === "Intl" || typeName.startsWith("Intl.");
 }
 
 function isErrorShapedContractNestedDeclaration(
@@ -3319,6 +4084,118 @@ function exposedServiceSurfaceMethods(
   );
 }
 
+function applicationServiceUseCaseDependencyBindings(
+  file: ArchitectureFile,
+  context: ProjectContext,
+  serviceName: string,
+): ReadonlyMap<string, string> {
+  const aggregateTypes = new Set(
+    file.topLevelDeclarations
+      .map((declaration) => declaration.name)
+      .filter((name) => name.endsWith("UseCases")),
+  );
+  const bindings = new Map<string, string>();
+
+  for (const member of file.storedMemberDeclarations) {
+    if (member.enclosingTypeName !== serviceName || member.isStatic) {
+      continue;
+    }
+
+    for (const typeName of member.typeNames) {
+      if (resolvesToApplicationUseCase(typeName, context)) {
+        bindings.set(member.name, typeName);
+        continue;
+      }
+
+      if (!aggregateTypes.has(typeName)) {
+        continue;
+      }
+
+      for (const aggregateMember of file.storedMemberDeclarations) {
+        if (aggregateMember.enclosingTypeName !== typeName) {
+          continue;
+        }
+
+        const useCaseType = aggregateMember.typeNames.find((aggregateTypeName) =>
+          resolvesToApplicationUseCase(aggregateTypeName, context),
+        );
+        if (useCaseType) {
+          bindings.set(aggregateMember.name, useCaseType);
+        }
+      }
+    }
+  }
+
+  return bindings;
+}
+
+function resolvesToApplicationUseCase(
+  typeName: string,
+  context: ProjectContext,
+): boolean {
+  const canonicalName = canonicalReferenceTypeName(typeName);
+  return context.declarations.some(
+    (declaration) =>
+      declaration.name === canonicalName &&
+      declaration.roleFolder === RoleFolder.ApplicationUseCases,
+  );
+}
+
+function useCaseDependenciesUsedByApplicationServiceMethod(
+  methodName: string,
+  serviceName: string,
+  dependencyBindings: ReadonlyMap<string, string>,
+  file: ArchitectureFile,
+  visitedMethods: ReadonlySet<string>,
+): ReadonlySet<string> {
+  if (visitedMethods.has(methodName)) {
+    return new Set();
+  }
+
+  const nextVisitedMethods = new Set(visitedMethods).add(methodName);
+  const privateHelperNames = new Set(
+    file.methodDeclarations.flatMap((declaration) => {
+      if (
+        declaration.enclosingTypeName !== serviceName ||
+        !declaration.isPrivateOrFileprivate
+      ) {
+        return [];
+      }
+
+      return [declaration.name];
+    }),
+  );
+  const usedDependencies = new Set<string>();
+
+  for (const occurrence of file.operationalUseOccurrences) {
+    if (
+      occurrence.enclosingTypeName !== serviceName ||
+      occurrence.enclosingMethodName !== methodName
+    ) {
+      continue;
+    }
+
+    const useCaseType = dependencyBindings.get(occurrence.baseName);
+    if (useCaseType) {
+      usedDependencies.add(useCaseType);
+    }
+
+    if (privateHelperNames.has(occurrence.baseName)) {
+      for (const helperUseCaseType of useCaseDependenciesUsedByApplicationServiceMethod(
+        occurrence.baseName,
+        serviceName,
+        dependencyBindings,
+        file,
+        nextVisitedMethods,
+      )) {
+        usedDependencies.add(helperUseCaseType);
+      }
+    }
+  }
+
+  return usedDependencies;
+}
+
 function injectedApplicationUseCaseDependencyNames(
   file: ArchitectureFile,
   context: ProjectContext,
@@ -3893,8 +4770,8 @@ function referenceLayerDiagnostics(
     }
     seenNames.add(reference.name);
 
-    const declaration = context.uniqueDeclaration(reference.name);
-    if (!declaration || !predicate(declaration)) {
+    const declaration = context.resolvedDeclarations(reference.name).find(predicate);
+    if (!declaration) {
       continue;
     }
 

@@ -1,7 +1,12 @@
 import type { ArchitecturePolicyProtocol } from "../Protocols/ArchitecturePolicyProtocol.ts";
 import type { ArchitectureDiagnostic } from "../ValueObjects/ArchitectureDiagnostic.ts";
 import type { ArchitectureFile } from "../ValueObjects/ArchitectureFile.ts";
+import {
+  DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+  type ArchitectureLinterConfiguration,
+} from "../ValueObjects/ArchitectureLinterConfiguration.ts";
 import { ArchitectureLayer } from "../ValueObjects/ArchitectureLayer.ts";
+import type { SourceCoordinate } from "../ValueObjects/SourceCoordinate.ts";
 import type { ArchitectureTopLevelDeclaration } from "../ValueObjects/ArchitectureTopLevelDeclaration.ts";
 import type { ProjectContext } from "../ValueObjects/ProjectContext.ts";
 import { NominalKind } from "../ValueObjects/NominalKind.ts";
@@ -76,8 +81,10 @@ export class DomainOuterLayerReferencePolicy
       }
       seenNames.add(reference.name);
 
-      const declaration = context.uniqueDeclaration(reference.name);
-      if (!declaration || declaration.layer === ArchitectureLayer.Domain) {
+      const declaration = context.resolvedDeclarations(reference.name).find(
+        (candidate) => candidate.layer !== ArchitectureLayer.Domain,
+      );
+      if (!declaration) {
         continue;
       }
 
@@ -331,6 +338,201 @@ export class DomainPolicyShapePolicy implements ArchitecturePolicyProtocol {
             decomposition: `Add or rename a top-level type in ${file.repoRelativePath} so its name ends with 'Policy'; if the file is not actually a policy, move it under the Domain role folder that matches its real responsibility (Domain/Entities, Domain/ValueObjects, Domain/Protocols, or Domain/Errors).`,
           }),
         ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
+export class DomainPoliciesSinglePolicySurfacePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "domain.policies.single_policy_surface";
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (file.classification.roleFolder !== RoleFolder.DomainPolicies) {
+      return [];
+    }
+
+    return file.topLevelDeclarations.flatMap((declaration) => {
+      if (
+        declaration.kind === NominalKind.Protocol ||
+        declaration.name.endsWith("Policy")
+      ) {
+        return [];
+      }
+
+      return [
+        file.diagnostic(
+          DomainPoliciesSinglePolicySurfacePolicy.ruleID,
+          domainRemediationMessage({
+            summary: `Domain/Policies file '${file.repoRelativePath}' declares non-policy top-level type '${declaration.name}'.`,
+            categories: [
+              "mutable runtime or process state riding along in a policy file",
+              "decision-output value type misfiled outside Domain/ValueObjects",
+              "platform or workflow taxonomy parked beside the policy that consumes it",
+              "test instrumentation promoted into Domain",
+              "private file-scoped computation helper declared beside the policy instead of nested within it",
+            ],
+            signs: [
+              "a top-level declaration does not end with 'Policy'",
+              "the file's Policy-suffixed namesake satisfies the policy shape rule while this declaration is never examined",
+              "the type carries var state, mutating members, provenance or fixture vocabulary, or enum taxonomies consumed by outer layers",
+            ],
+            architecturalNote:
+              "Domain/Policies holds stateless business deciders -- one concrete policy surface per file keeps the rules layer auditable, while runtime guards belong to the runtime that holds them, value and decision shapes belong in Domain/ValueObjects, and provider taxonomies belong in Application contracts.",
+            destination:
+              "Domain/ValueObjects for pure decision-output and input value types; App/Runtime as a private nested type of the consuming runtime for process-lifetime guards and memoizers; Application/Contracts/Workflow for availability and status taxonomies; the test target for fixture and benchmark types; nested inside the policy type for private computation helpers.",
+            decomposition: `If '${declaration.name}' is a private computation helper, nest it inside the policy type; if it is a pure value the policy returns or consumes, move it to a matching Domain/ValueObjects file; if it carries mutable process state, move it into the runtime that uses it; if it is a provider or status taxonomy, move it to Application/Contracts; then update references and re-run the linter.`,
+          }),
+          declaration.coordinate,
+        ),
+      ];
+    });
+  }
+}
+
+export class DomainDeliveryVocabularyPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "domain.delivery_vocabulary";
+  private readonly deniedFragments: readonly string[];
+  private readonly allowedIdentifiers: ReadonlySet<string>;
+
+  constructor(
+    configuration: ArchitectureLinterConfiguration = DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+  ) {
+    this.deniedFragments = [
+      ...DOMAIN_DELIVERY_VOCABULARY_DENIED_FRAGMENTS,
+      ...configuration.domainVocabularyDeniedFragments,
+    ].map((fragment) => fragment.toLowerCase());
+    this.allowedIdentifiers = new Set(
+      configuration.domainVocabularyAllowedIdentifiers.map((identifier) =>
+        identifier.toLowerCase(),
+      ),
+    );
+  }
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isDomain) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenFragments = new Set<string>();
+    const lowerIdentifiers = new Set(
+      file.identifierOccurrences.map((occurrence) =>
+        occurrence.name.toLowerCase(),
+      ),
+    );
+
+    for (const occurrence of file.identifierOccurrences) {
+      const lowerName = occurrence.name.toLowerCase();
+      if (this.allowedIdentifiers.has(lowerName)) {
+        continue;
+      }
+
+      const fragment = this.deniedFragments.find((candidate) =>
+        lowerName.includes(candidate),
+      );
+      if (!fragment || seenFragments.has(fragment)) {
+        continue;
+      }
+
+      seenFragments.add(fragment);
+      diagnostics.push(
+        domainDeliveryVocabularyDiagnostic(
+          file,
+          occurrence.name,
+          fragment,
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    if (
+      lowerIdentifiers.has("provisional") &&
+      lowerIdentifiers.has("ephemeral") &&
+      !seenFragments.has("unauthorizationstatus")
+    ) {
+      diagnostics.push(
+        domainDeliveryVocabularyDiagnostic(
+          file,
+          "provisional+ephemeral",
+          "unauthorizationstatus",
+          { line: 1, column: 1 },
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
+export class DomainOuterArtifactStringLiteralsPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "domain.outer_artifact_string_literals";
+  private readonly fragments: readonly string[];
+
+  constructor(
+    configuration: ArchitectureLinterConfiguration = DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+  ) {
+    this.fragments = [
+      ...DOMAIN_OUTER_ARTIFACT_STRING_LITERAL_FRAGMENTS,
+      ...configuration.domainOuterArtifactFragments,
+      ...configuration.storageNamespacePrefixes,
+    ].map((fragment) => fragment.toLowerCase());
+  }
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isDomain || file.classification.isDomainErrorFile) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenFragments = new Set<string>();
+    const seenValues = new Set<string>();
+
+    for (const occurrence of file.stringLiteralOccurrences) {
+      const value = occurrence.value;
+      const lowerValue = value.toLowerCase();
+      const fragment = this.fragments.find((candidate) =>
+        lowerValue.includes(candidate),
+      );
+
+      if (fragment) {
+        if (seenFragments.has(fragment)) {
+          continue;
+        }
+
+        seenFragments.add(fragment);
+        diagnostics.push(
+          domainOuterArtifactDiagnostic(file, value, occurrence.coordinate),
+        );
+        continue;
+      }
+
+      if (
+        !DOMAIN_OUTER_ARTIFACT_DOTTED_KEY_PATTERN.test(value) ||
+        seenValues.has(value)
+      ) {
+        continue;
+      }
+
+      seenValues.add(value);
+      diagnostics.push(
+        domainOuterArtifactDiagnostic(file, value, occurrence.coordinate),
       );
     }
 
@@ -727,19 +929,84 @@ export class RepositoryProtocolPlacementPolicy
   }
 }
 
-export function makeDomainArchitecturePolicies(): readonly ArchitecturePolicyProtocol[] {
+export function makeDomainArchitecturePolicies(
+  configuration: ArchitectureLinterConfiguration = DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+): readonly ArchitecturePolicyProtocol[] {
   return [
     new DomainForbiddenImportPolicy(),
     new DomainOuterLayerReferencePolicy(),
     new DomainDurableStructurePolicy(),
     new DomainPolicyPurityPolicy(),
     new DomainPolicyShapePolicy(),
+    new DomainPoliciesSinglePolicySurfacePolicy(),
+    new DomainDeliveryVocabularyPolicy(configuration),
+    new DomainOuterArtifactStringLiteralsPolicy(configuration),
     new DomainProtocolNamingPolicy(),
     new DomainErrorsShapePolicy(),
     new DomainErrorsPlacementPolicy(),
     new RepositoryProtocolPlacementPolicy(),
   ];
 }
+
+const DOMAIN_DELIVERY_VOCABULARY_DENIED_FRAGMENTS = [
+  "backgroundrefresh",
+  "runtimestate",
+  "relaunch",
+  "prewarm",
+  "contextwindow",
+  "debounce",
+  "launchguard",
+  "fixture",
+  "fake",
+  "mock",
+  "testharness",
+  "storybook",
+  "playwright",
+  "cypress",
+  "vitest",
+  "jest",
+  "confetti",
+  "presentationstyle",
+  "systemimagename",
+  "viewmodel",
+  "reactnode",
+  "jsxelement",
+  "componentprops",
+  "renderstate",
+  "cssclass",
+  "appleintelligence",
+  "firebase",
+  "supabase",
+  "stripe",
+  "cloudflare",
+  "s3bucket",
+  "localstorage",
+  "sessionstorage",
+  "indexeddb",
+  "serviceworker",
+  "webworker",
+  "websocket",
+  "postmessage",
+  "domnode",
+  "htmlelement",
+  "hydrationstate",
+  "runtimecache",
+] as const;
+
+const DOMAIN_OUTER_ARTIFACT_STRING_LITERAL_FRAGMENTS = [
+  "storage key",
+  "launch argument",
+  "debug description",
+  "diagnostic",
+  "route.",
+  "os backup",
+  "app group",
+  "privacy nutrition label",
+  "cloud account",
+] as const;
+
+const DOMAIN_OUTER_ARTIFACT_DOTTED_KEY_PATTERN =
+  /^[a-z0-9_-]+(\.[a-z0-9_-]+){2,}$/;
 
 const DOMAIN_POLICY_FORBIDDEN_APIS = {
   platformModules: new Set(["node:fs", "node:path", "react", "express"]),
@@ -885,4 +1152,64 @@ function isRepositoryProtocolName(name: string): boolean {
 
 function isSubset<T>(subset: ReadonlySet<T>, superset: ReadonlySet<T>): boolean {
   return [...subset].every((value) => superset.has(value));
+}
+
+function domainDeliveryVocabularyDiagnostic(
+  file: ArchitectureFile,
+  identifier: string,
+  fragment: string,
+  coordinate: SourceCoordinate,
+): ArchitectureDiagnostic {
+  return file.diagnostic(
+    DomainDeliveryVocabularyPolicy.ruleID,
+    domainRemediationMessage({
+      summary: `Domain file '${file.repoRelativePath}' uses delivery-mechanism vocabulary '${identifier}' (matched fragment '${fragment}').`,
+      categories: [
+        "scheduler, browser, or runtime concept modeled in Domain",
+        "platform or vendor SDK taxonomy mirrored into a Domain type",
+        "test-harness or QA instrumentation vocabulary in the enterprise-rules layer",
+        "UI rendering decision encoded as Domain data",
+      ],
+      signs: [
+        "identifier matches a known delivery, platform, vendor, presentation, runtime, fixture, or test-harness fragment",
+        "the file can be import-clean while still leaking outer-layer meaning through names",
+      ],
+      architecturalNote:
+        "Dependency direction of meaning matters as much as compile-time direction: when a browser API, runtime, vendor SDK, test harness, or rendering engine names a Domain concept, changing that delivery mechanism forces Domain edits and weakens the Domain language even though imports stay clean.",
+      destination:
+        "App/Runtime for process and scheduling state; Application/Contracts for provider availability taxonomies that adapters map into; the test target for fixture and harness vocabulary; Presentation for rendering decisions; Domain keeps only the problem-space decision semantics.",
+      decomposition: `Identify what business decision '${identifier}' represents, rename the Domain concept in problem-space vocabulary, move the delivery-specific remainder to the layer that owns that mechanism, update boundary mapping code, and re-run the linter.`,
+    }),
+    coordinate,
+  );
+}
+
+function domainOuterArtifactDiagnostic(
+  file: ArchitectureFile,
+  value: string,
+  coordinate: SourceCoordinate,
+): ArchitectureDiagnostic {
+  return file.diagnostic(
+    DomainOuterArtifactStringLiteralsPolicy.ruleID,
+    domainRemediationMessage({
+      summary: `Domain file '${file.repoRelativePath}' embeds outer-layer artifact text in string literal '${value}'.`,
+      categories: [
+        "platform or compliance vocabulary hard-coded as Domain sentences",
+        "storage or route namespace known to the innermost layer",
+        "localization-catalog key chosen by Domain instead of Presentation",
+        "stringly-typed cross-layer contract consumed by exact sentence identity",
+      ],
+      signs: [
+        "literal contains an outer-artifact fragment (storage key, launch argument, route or storage namespace, OS backup, App Group, privacy nutrition label, cloud account) or wholly matches a 3+-segment dotted localization-key shape",
+        "outer layers compare or render the literal verbatim, so rewording the Domain string silently changes workflow or UI behavior",
+      ],
+      architecturalNote:
+        "Domain must not know the names of delivery artifacts -- route prefixes, storage namespaces, compliance terms, or resource-catalog keys -- because renaming any of them then requires Domain edits, and exact-match string filtering across layers is an untested silent-behavior-change hazard.",
+      destination:
+        "Application/Contracts/Workflow for claim and redaction taxonomies modeled as enums with raw values, not sentences; Presentation for mapping Domain outcome values to localization keys; App/Configuration for namespace constants.",
+      decomposition:
+        "Replace sentence-identity claims with a Domain enum, move human-readable wording to the rendering layer, move namespace and artifact-name constants to the owning outer layer, and pass values into Domain only where Domain logic genuinely needs them.",
+    }),
+    coordinate,
+  );
 }

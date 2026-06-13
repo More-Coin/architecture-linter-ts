@@ -1,7 +1,7 @@
 {
   "name": "architecture-linter-ts",
   "description": "Installable TypeScript clean architecture linter powered by ts-morph.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "license": "UNLICENSED",
   "repository": {

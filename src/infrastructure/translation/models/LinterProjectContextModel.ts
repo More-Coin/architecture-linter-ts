@@ -1,7 +1,10 @@
 import type { ArchitectureFile } from "../../../Domain/ValueObjects/ArchitectureFile.ts";
 import type { IndexedDeclaration } from "../../../Domain/ValueObjects/IndexedDeclaration.ts";
 import type { IndexedMethodShape } from "../../../Domain/ValueObjects/IndexedMethodShape.ts";
-import { ProjectContext } from "../../../Domain/ValueObjects/ProjectContext.ts";
+import {
+  type IndexedStringLiteralSite,
+  ProjectContext,
+} from "../../../Domain/ValueObjects/ProjectContext.ts";
 
 export class LinterProjectContextModel {
   toDomain(files: readonly ArchitectureFile[]): ProjectContext {
@@ -31,7 +34,23 @@ export class LinterProjectContextModel {
         };
       }),
     );
+    const literalSites: IndexedStringLiteralSite[] = files.flatMap((file) =>
+      file.stringLiteralOccurrences.map((occurrence) => ({
+        value: occurrence.value,
+        repoRelativePath: file.repoRelativePath,
+        layer: file.classification.layer,
+        roleFolder: file.classification.roleFolder,
+      })),
+    );
+    const aliasTargetsByName = new Map<string, string[]>();
+    for (const file of files) {
+      for (const declaration of file.typeAliasDeclarations) {
+        const targets = aliasTargetsByName.get(declaration.aliasName) ?? [];
+        targets.push(declaration.targetTypeName);
+        aliasTargetsByName.set(declaration.aliasName, targets);
+      }
+    }
 
-    return new ProjectContext(declarations);
+    return new ProjectContext(declarations, literalSites, aliasTargetsByName);
   }
 }

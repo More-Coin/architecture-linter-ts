@@ -4,26 +4,34 @@ import {
   SourceRootLayoutPolicy,
 } from "./SourceRootArchitecturePolicies.ts";
 import {
+  AppApplicationBoundaryOperationPolicy,
   AppConfigurationShapePolicy,
   AppDependencyInjectionShapePolicy,
+  AppMultiServiceOrchestrationPolicy,
+  AppPortProtocolConformancePolicy,
   AppRuntimeShapePolicy,
   CompositionRootInwardReferencePolicy,
 } from "./AppCompositionPolicies.ts";
 import {
   ApplicationAmbiguousRoleNamePolicy,
+  ApplicationContractRegistryAccessPolicy,
   ApplicationContractsErrorTaxonomyPolicy,
   ApplicationContractsNestedErrorPlacementPolicy,
   ApplicationContractsNoCollaboratorDependenciesPolicy,
   ApplicationContractsNoErrorMappingSurfacePolicy,
   ApplicationContractsNoStateTransitionSurfacePolicy,
   ApplicationContractsOwnershipPolicy,
+  ApplicationContractsPassiveCarrierSurfacePolicy,
   ApplicationContractsShapePolicy,
   ApplicationErrorsPlacementPolicy,
   ApplicationErrorsShapePolicy,
   ApplicationOuterLayerReferencePolicy,
   ApplicationPassiveDependencyResolutionPolicy,
+  ApplicationPortProtocolConformancePolicy,
   ApplicationPortProtocolsShapePolicy,
+  ApplicationProviderAgnosticNamingPolicy,
   ApplicationProtocolPlacementPolicy,
+  ApplicationServicesDependencyCardinalityPolicy,
   ApplicationServicesDependencyResolutionPolicy,
   ApplicationServicesInfrastructureReferencePolicy,
   ApplicationServicesNoProtocolsPolicy,
@@ -49,11 +57,14 @@ import {
   ApplicationUseCasesUseCaseReferencePolicy,
 } from "./ApplicationArchitecturePolicies.ts";
 import {
+  DomainDeliveryVocabularyPolicy,
   DomainDurableStructurePolicy,
   DomainErrorsPlacementPolicy,
   DomainErrorsShapePolicy,
   DomainForbiddenImportPolicy,
+  DomainOuterArtifactStringLiteralsPolicy,
   DomainOuterLayerReferencePolicy,
+  DomainPoliciesSinglePolicySurfacePolicy,
   DomainPolicyPurityPolicy,
   DomainPolicyShapePolicy,
   DomainProtocolNamingPolicy,
@@ -65,7 +76,13 @@ import {
   TechnicalSeamProtocolPlacementPolicy,
 } from "./CrossArchitecturePolicies.ts";
 import {
+  ArchitectureDisabledRuleVisibilityPolicy,
+  ArchitectureUnclassifiedSourcePolicy,
+  ArchitectureUnknownRoleSubdirectoryPolicy,
+} from "./ExtendedArchitecturePolicies.ts";
+import {
   InfrastructureApplicationContractBehaviorAttachmentPolicy,
+  InfrastructureAdapterOnAdapterCompositionPolicy,
   InfrastructureCrossLayerProtocolConformancePolicy,
   InfrastructureEmptyDirectoryPolicy,
   InfrastructureErrorsPlacementPolicy,
@@ -93,6 +110,7 @@ import {
   InfrastructurePortAdaptersInlineTypedBoundaryCompatibilityEvaluationPolicy,
   InfrastructurePortAdaptersInlineTypedInteractionDispatchPolicy,
   InfrastructurePortAdaptersShapePolicy,
+  InfrastructureRepositoriesInlineBusinessLiteralsPolicy,
   InfrastructureRepositoriesRoleFitPolicy,
   InfrastructureRepositoriesShapePolicy,
   InfrastructureRoleFolderStructurePolicy,
@@ -106,22 +124,29 @@ import {
   InfrastructureTranslationModelsSplitRequestShapingPolicy,
   InfrastructureTranslationStructurePolicy,
   InfrastructureTranslationShapePolicy,
+  InfrastructureUseCaseOrServiceReferencePolicy,
 } from "./InfrastructureArchitecturePolicies.ts";
 import {
+  PresentationApplicationFunctionSeamPolicy,
+  PresentationCalendarDayBucketingPolicy,
   PresentationCompositionReferencePolicy,
   PresentationControllerShapePolicy,
   PresentationControllersFunctionSeamPolicy,
   PresentationControllersServiceReferencePolicy,
+  PresentationCrossLayerWireLiteralPolicy,
   PresentationDependencyResolutionPolicy,
+  PresentationDomainPolicyReferencePolicy,
   PresentationDTOsShapePolicy,
   PresentationErrorsPlacementPolicy,
   PresentationErrorsShapePolicy,
   PresentationInfrastructureReferencePolicy,
   PresentationMiddlewareShapePolicy,
+  PresentationPlatformStateAccessPolicy,
   PresentationPortProtocolReferencePolicy,
   PresentationPresentersShapePolicy,
   PresentationRenderersShapePolicy,
   PresentationRouteShapePolicy,
+  PresentationStateTransitionReferencePolicy,
   PresentationStylesShapePolicy,
   PresentationUseCaseReferencePolicy,
   PresentationViewModelsShapePolicy,
@@ -157,6 +182,13 @@ type RegisteredProjectArchitecturePolicy = Readonly<{
 }>;
 
 export class DefaultArchitecturePolicies {
+  static get registeredRuleIDs(): readonly string[] {
+    return [
+      ...REGISTERED_POLICIES.map((policy) => policy.ruleID),
+      ...REGISTERED_PROJECT_POLICIES.map((policy) => policy.ruleID),
+    ];
+  }
+
   static make(
     configuration: ArchitectureLinterConfiguration = DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
   ): readonly ArchitecturePolicyProtocol[] {
@@ -187,6 +219,10 @@ export class DefaultArchitecturePolicies {
   ): boolean {
     if (configuration.disabledRuleIDs.includes(ruleID)) {
       return false;
+    }
+
+    if (ruleID === ArchitectureDisabledRuleVisibilityPolicy.ruleID) {
+      return true;
     }
 
     return !configuration.disabledRulePrefixes.some((prefix) =>
@@ -223,6 +259,19 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
   {
     ruleID: DomainPolicyShapePolicy.ruleID,
     make: () => new DomainPolicyShapePolicy(),
+  },
+  {
+    ruleID: DomainPoliciesSinglePolicySurfacePolicy.ruleID,
+    make: () => new DomainPoliciesSinglePolicySurfacePolicy(),
+  },
+  {
+    ruleID: DomainDeliveryVocabularyPolicy.ruleID,
+    make: (configuration) => new DomainDeliveryVocabularyPolicy(configuration),
+  },
+  {
+    ruleID: DomainOuterArtifactStringLiteralsPolicy.ruleID,
+    make: (configuration) =>
+      new DomainOuterArtifactStringLiteralsPolicy(configuration),
   },
   {
     ruleID: DomainProtocolNamingPolicy.ruleID,
@@ -285,16 +334,33 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
     make: () => new ApplicationContractsErrorTaxonomyPolicy(),
   },
   {
+    ruleID: ApplicationContractsPassiveCarrierSurfacePolicy.ruleID,
+    make: () => new ApplicationContractsPassiveCarrierSurfacePolicy(),
+  },
+  {
     ruleID: ApplicationPassiveDependencyResolutionPolicy.ruleID,
     make: () => new ApplicationPassiveDependencyResolutionPolicy(),
+  },
+  {
+    ruleID: ApplicationContractRegistryAccessPolicy.ruleID,
+    make: () => new ApplicationContractRegistryAccessPolicy(),
   },
   {
     ruleID: ApplicationProtocolPlacementPolicy.ruleID,
     make: () => new ApplicationProtocolPlacementPolicy(),
   },
   {
+    ruleID: ApplicationPortProtocolConformancePolicy.ruleID,
+    make: () => new ApplicationPortProtocolConformancePolicy(),
+  },
+  {
     ruleID: ApplicationAmbiguousRoleNamePolicy.ruleID,
     make: () => new ApplicationAmbiguousRoleNamePolicy(),
+  },
+  {
+    ruleID: ApplicationProviderAgnosticNamingPolicy.ruleID,
+    make: (configuration) =>
+      new ApplicationProviderAgnosticNamingPolicy(configuration),
   },
   {
     ruleID: ApplicationErrorsShapePolicy.ruleID,
@@ -335,6 +401,11 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
   {
     ruleID: ApplicationServicesOrchestrationPolicy.ruleID,
     make: () => new ApplicationServicesOrchestrationPolicy(),
+  },
+  {
+    ruleID: ApplicationServicesDependencyCardinalityPolicy.ruleID,
+    make: (configuration) =>
+      new ApplicationServicesDependencyCardinalityPolicy(configuration),
   },
   {
     ruleID: ApplicationServicesSurfacePolicy.ruleID,
@@ -409,6 +480,34 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
     make: () => new AppDependencyInjectionShapePolicy(),
   },
   {
+    ruleID: AppApplicationBoundaryOperationPolicy.ruleID,
+    make: () => new AppApplicationBoundaryOperationPolicy(),
+  },
+  {
+    ruleID: AppMultiServiceOrchestrationPolicy.ruleID,
+    make: () => new AppMultiServiceOrchestrationPolicy(),
+  },
+  {
+    ruleID: AppPortProtocolConformancePolicy.ruleID,
+    make: () => new AppPortProtocolConformancePolicy(),
+  },
+  {
+    ruleID: ArchitectureDisabledRuleVisibilityPolicy.ruleID,
+    make: (configuration) =>
+      new ArchitectureDisabledRuleVisibilityPolicy(
+        configuration,
+        DefaultArchitecturePolicies.registeredRuleIDs,
+      ),
+  },
+  {
+    ruleID: ArchitectureUnclassifiedSourcePolicy.ruleID,
+    make: () => new ArchitectureUnclassifiedSourcePolicy(),
+  },
+  {
+    ruleID: ArchitectureUnknownRoleSubdirectoryPolicy.ruleID,
+    make: () => new ArchitectureUnknownRoleSubdirectoryPolicy(),
+  },
+  {
     ruleID: CompositionRootInwardReferencePolicy.ruleID,
     make: () => new CompositionRootInwardReferencePolicy(),
   },
@@ -419,6 +518,11 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
   {
     ruleID: InfrastructureRepositoriesRoleFitPolicy.ruleID,
     make: () => new InfrastructureRepositoriesRoleFitPolicy(),
+  },
+  {
+    ruleID: InfrastructureRepositoriesInlineBusinessLiteralsPolicy.ruleID,
+    make: (configuration) =>
+      new InfrastructureRepositoriesInlineBusinessLiteralsPolicy(configuration),
   },
   {
     ruleID: InfrastructureGatewaysShapePolicy.ruleID,
@@ -580,6 +684,14 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
     make: () => new InfrastructureForbiddenPresentationDependencyPolicy(),
   },
   {
+    ruleID: InfrastructureUseCaseOrServiceReferencePolicy.ruleID,
+    make: () => new InfrastructureUseCaseOrServiceReferencePolicy(),
+  },
+  {
+    ruleID: InfrastructureAdapterOnAdapterCompositionPolicy.ruleID,
+    make: () => new InfrastructureAdapterOnAdapterCompositionPolicy(),
+  },
+  {
     ruleID: InfrastructureCrossLayerProtocolConformancePolicy.ruleID,
     make: () => new InfrastructureCrossLayerProtocolConformancePolicy(),
   },
@@ -602,6 +714,14 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
     make: () => new PresentationUseCaseReferencePolicy(),
   },
   {
+    ruleID: PresentationDomainPolicyReferencePolicy.ruleID,
+    make: () => new PresentationDomainPolicyReferencePolicy(),
+  },
+  {
+    ruleID: PresentationStateTransitionReferencePolicy.ruleID,
+    make: () => new PresentationStateTransitionReferencePolicy(),
+  },
+  {
     ruleID: PresentationPortProtocolReferencePolicy.ruleID,
     make: () => new PresentationPortProtocolReferencePolicy(),
   },
@@ -614,8 +734,24 @@ const REGISTERED_POLICIES: readonly RegisteredArchitecturePolicy[] = [
     make: () => new PresentationDependencyResolutionPolicy(),
   },
   {
+    ruleID: PresentationCalendarDayBucketingPolicy.ruleID,
+    make: () => new PresentationCalendarDayBucketingPolicy(),
+  },
+  {
+    ruleID: PresentationPlatformStateAccessPolicy.ruleID,
+    make: () => new PresentationPlatformStateAccessPolicy(),
+  },
+  {
+    ruleID: PresentationCrossLayerWireLiteralPolicy.ruleID,
+    make: () => new PresentationCrossLayerWireLiteralPolicy(),
+  },
+  {
     ruleID: PresentationControllersFunctionSeamPolicy.ruleID,
     make: () => new PresentationControllersFunctionSeamPolicy(),
+  },
+  {
+    ruleID: PresentationApplicationFunctionSeamPolicy.ruleID,
+    make: () => new PresentationApplicationFunctionSeamPolicy(),
   },
   {
     ruleID: PresentationRouteShapePolicy.ruleID,

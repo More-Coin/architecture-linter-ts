@@ -29,6 +29,13 @@ export type ArchitectureLinterConfiguration = Readonly<{
   moduleAliases: ModuleAliases;
   disabledRuleIDs: readonly string[];
   disabledRulePrefixes: readonly string[];
+  domainVocabularyDeniedFragments: readonly string[];
+  domainVocabularyAllowedIdentifiers: readonly string[];
+  domainOuterArtifactFragments: readonly string[];
+  storageNamespacePrefixes: readonly string[];
+  providerSurfaceTerms: readonly string[];
+  maxServiceUseCaseDependencies: number;
+  maxUseCasesPerServiceMethod: number;
 }>;
 
 export const DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION: ArchitectureLinterConfiguration =
@@ -64,4 +71,11 @@ export const DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION: ArchitectureLinterConfig
     },
     disabledRuleIDs: [],
     disabledRulePrefixes: [],
+    domainVocabularyDeniedFragments: [],
+    domainVocabularyAllowedIdentifiers: [],
+    domainOuterArtifactFragments: [],
+    storageNamespacePrefixes: [],
+    providerSurfaceTerms: [],
+    maxServiceUseCaseDependencies: 8,
+    maxUseCasesPerServiceMethod: 5,
   };

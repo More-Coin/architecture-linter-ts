@@ -8,12 +8,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION } from "../../src/App/configuration/ArchitectureLinterConfiguration.ts";
 import { ArchitectureLinter } from "../../src/App/dependency-injection/ArchitectureLinter.ts";
 import {
+  ApplicationPortProtocolConformancePolicy,
   ApplicationUseCasesAbstractionDelegationPolicy,
 } from "../../src/Domain/Policies/ApplicationArchitecturePolicies.ts";
 import {
   PresentationControllersFunctionSeamPolicy,
   PresentationControllersUseCaseReferencePolicy,
   PresentationInfrastructureReferencePolicy,
+  PresentationStateTransitionReferencePolicy,
   PresentationViewsShapePolicy,
 } from "../../src/Domain/Policies/PresentationArchitecturePolicies.ts";
 import { SourceFileDiscoveryGateway } from "../../src/Infrastructure/gateways/SourceFileDiscoveryGateway.ts";
@@ -286,6 +288,136 @@ test("linter end-to-end flags direct use case references inside TSX controllers"
 
     assert.ok(diagnostic);
     assert.equal(diagnostic.line, 2);
+  });
+});
+
+test("linter end-to-end resolves type alias hops for Application port conformances", () => {
+  withTemporaryProject((rootPath, rootURL) => {
+    writeProjectFile(
+      rootPath,
+      "src/Application/Ports/Protocols/PlanningPortProtocol.ts",
+      [
+        "export interface PlanningPortProtocol {",
+        "  load(): void;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeProjectFile(
+      rootPath,
+      "src/Application/UseCases/PlanUseCase.ts",
+      [
+        'import type { PlanningPortProtocol } from "../Ports/Protocols/PlanningPortProtocol.ts";',
+        "type PlanningPort = PlanningPortProtocol;",
+        "class LocalPlanningPort implements PlanningPort {",
+        "  load(): void {}",
+        "}",
+        "export class PlanUseCase {",
+        "  run(): void {",
+        "    void LocalPlanningPort;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const linter = new ArchitectureLinter({
+      configuration: DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+      policies: [new ApplicationPortProtocolConformancePolicy()],
+    });
+    const result = linter.lintProject(rootURL);
+    const diagnostic = result.diagnostics.find(
+      (candidate) =>
+        candidate.ruleID === ApplicationPortProtocolConformancePolicy.ruleID &&
+        candidate.path === "src/Application/UseCases/PlanUseCase.ts",
+    );
+
+    assert.ok(diagnostic);
+    assert.ok(diagnostic.message.includes("LocalPlanningPort"));
+  });
+});
+
+test("linter end-to-end ignores Application port alias cycles", () => {
+  withTemporaryProject((rootPath, rootURL) => {
+    writeProjectFile(
+      rootPath,
+      "src/Application/Ports/Protocols/PlanningPortProtocol.ts",
+      [
+        "export interface PlanningPortProtocol {",
+        "  load(): void;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeProjectFile(
+      rootPath,
+      "src/Application/UseCases/PlanUseCase.ts",
+      [
+        "type PlanningPort = OtherPlanningPort;",
+        "type OtherPlanningPort = PlanningPort;",
+        "class LocalPlanningPort implements PlanningPort {",
+        "  load(): void {}",
+        "}",
+        "export class PlanUseCase {}",
+        "",
+      ].join("\n"),
+    );
+
+    const linter = new ArchitectureLinter({
+      configuration: DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+      policies: [new ApplicationPortProtocolConformancePolicy()],
+    });
+    const result = linter.lintProject(rootURL);
+    const diagnostics = result.diagnostics.filter(
+      (candidate) =>
+        candidate.ruleID === ApplicationPortProtocolConformancePolicy.ruleID,
+    );
+
+    assert.deepEqual(diagnostics, []);
+  });
+});
+
+test("linter end-to-end flags presentation member calls to Application StateTransitions", () => {
+  withTemporaryProject((rootPath, rootURL) => {
+    writeProjectFile(
+      rootPath,
+      "src/Application/StateTransitions/OrderStateTransition.ts",
+      [
+        "export class OrderStateTransition {",
+        "  static apply(order: unknown): unknown {",
+        "    return order;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeProjectFile(
+      rootPath,
+      "src/Presentation/ViewModels/OrderViewModel.ts",
+      [
+        'import { OrderStateTransition } from "../../Application/StateTransitions/OrderStateTransition.ts";',
+        "export class OrderViewModel {",
+        "  update(order: unknown) {",
+        "    return OrderStateTransition.apply(order);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const linter = new ArchitectureLinter({
+      configuration: DEFAULT_ARCHITECTURE_LINTER_CONFIGURATION,
+      policies: [new PresentationStateTransitionReferencePolicy()],
+    });
+    const result = linter.lintProject(rootURL);
+    const diagnostic = result.diagnostics.find(
+      (candidate) =>
+        candidate.ruleID === PresentationStateTransitionReferencePolicy.ruleID &&
+        candidate.path === "src/Presentation/ViewModels/OrderViewModel.ts",
+    );
+
+    assert.ok(diagnostic);
+    assert.equal(diagnostic.line, 4);
   });
 });
 

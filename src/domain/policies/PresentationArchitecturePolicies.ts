@@ -2,6 +2,7 @@ import type { ArchitecturePolicyProtocol } from "../Protocols/ArchitecturePolicy
 import { ArchitectureLayer } from "../ValueObjects/ArchitectureLayer.ts";
 import type { ArchitectureDiagnostic } from "../ValueObjects/ArchitectureDiagnostic.ts";
 import type { ArchitectureFile } from "../ValueObjects/ArchitectureFile.ts";
+import type { IndexedDeclaration } from "../ValueObjects/IndexedDeclaration.ts";
 import { NominalKind } from "../ValueObjects/NominalKind.ts";
 import type { ProjectContext } from "../ValueObjects/ProjectContext.ts";
 import { RoleFolder } from "../ValueObjects/RoleFolder.ts";
@@ -50,10 +51,14 @@ export class PresentationControllersServiceReferencePolicy
       return [];
     }
 
-    const hasServiceReference = file.typeReferences.some((reference) => {
-      const declaration = context.uniqueDeclaration(reference.name);
-      return declaration?.roleFolder === RoleFolder.ApplicationServices;
-    });
+    const hasServiceReference = file.typeReferences.some((reference) =>
+      context
+        .resolvedDeclarations(reference.name)
+        .some(
+          (declaration) =>
+            declaration.roleFolder === RoleFolder.ApplicationServices,
+        ),
+    );
 
     if (hasServiceReference) {
       return [];
@@ -93,7 +98,9 @@ export class PresentationControllersUseCaseReferencePolicy
       }
       seenNames.add(reference.name);
 
-      const declaration = context.uniqueDeclaration(reference.name);
+      const declaration = context.resolvedDeclarations(reference.name).find(
+        (candidate) => candidate.roleFolder === RoleFolder.ApplicationUseCases,
+      );
       if (declaration?.roleFolder !== RoleFolder.ApplicationUseCases) {
         continue;
       }
@@ -137,6 +144,87 @@ export class PresentationControllersFunctionSeamPolicy
         occurrence.coordinate,
       ),
     );
+  }
+}
+
+export class PresentationApplicationFunctionSeamPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "presentation.application_function_seam";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isPresentation) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenCoordinates = new Set<string>();
+
+    for (const occurrence of file.functionTypeOccurrences) {
+      const parameterMatches = (occurrence.parameterTypeNames ?? [])
+        .flatMap((typeName) => declarationsNamed(context, typeName))
+        .filter((declaration) => declaration.layer === ArchitectureLayer.Application);
+      const returnMatches = (occurrence.returnTypeNames ?? [])
+        .flatMap((typeName) => declarationsNamed(context, typeName))
+        .filter((declaration) => declaration.layer === ArchitectureLayer.Application);
+      const matched = [...parameterMatches, ...returnMatches][0];
+      if (!matched) {
+        continue;
+      }
+
+      const hasApplicationReturn = returnMatches.length > 0;
+      const hasCommandParameter = parameterMatches.some(
+        (declaration) =>
+          declaration.roleFolder === RoleFolder.ApplicationContractsCommands,
+      );
+      const hasAsyncApplication = occurrence.isAsync === true;
+      const hasNonVoidApplication = occurrence.isVoidLikeReturn !== true;
+      if (
+        !hasApplicationReturn &&
+        !hasCommandParameter &&
+        !hasAsyncApplication &&
+        !hasNonVoidApplication
+      ) {
+        continue;
+      }
+
+      const coordinateKey = `${occurrence.coordinate.line}:${occurrence.coordinate.column}`;
+      if (seenCoordinates.has(coordinateKey)) {
+        continue;
+      }
+      seenCoordinates.add(coordinateKey);
+
+      diagnostics.push(
+        file.diagnostic(
+          PresentationApplicationFunctionSeamPolicy.ruleID,
+          richRemediationMessage({
+            summary: `Presentation file '${file.repoRelativePath}' declares a function or closure seam at line ${occurrence.coordinate.line} whose signature names Application type '${matched.name}'.`,
+            categories: [
+              "anonymous closure used as the presentation-to-application boundary",
+              "Application command contract submitted through a callable instead of a named service method",
+              "async Application workflow sequenced, raced, or cancelled inside a view",
+            ],
+            signs: [
+              "a stored property, type alias, interface property, or initializer parameter has a function type",
+              "the function type's parameter or return names resolve to Application declarations",
+              "the parameter is an Application/Contracts/Commands type, the closure returns an Application type, or the return is Promise-like",
+            ],
+            architecturalNote:
+              "Workflow execution crosses the presentation-to-application boundary through named Application service dependencies, not anonymous callable seams; named seams stay lintable, and timing, fallback, and cancellation policy stays behind the boundary.",
+            destination:
+              "Application/Services (a named service API injected where the closure was injected; construction stays in App/DependencyInjection).",
+            decomposition:
+              "Declare the operation as a method on an Application/Services type, move latency budgets, racing, cancellation, deduplication, and fallback decisions into that service, inject the service into the Presentation type in place of the closure, replace each closure invocation with a service call while keeping only render-state assignment in the view, then re-run the linter.",
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
   }
 }
 
@@ -499,15 +587,35 @@ export class PresentationInfrastructureReferencePolicy
     }
 
     const diagnostics: ArchitectureDiagnostic[] = [];
+    const localNames = new Set([
+      ...file.topLevelDeclarations.map((declaration) => declaration.name),
+      ...file.nestedNominalDeclarations.map((declaration) => declaration.name),
+    ]);
     const seenNames = new Set<string>();
+    const occurrences = [
+      ...file.typeReferences.map((reference) => ({
+        name: reference.name,
+        coordinate: reference.coordinate,
+      })),
+      ...file.constructionOccurrences.map((occurrence) => ({
+        name: occurrence.typeName,
+        coordinate: occurrence.coordinate,
+      })),
+      ...file.staticMemberAccessOccurrences.map((occurrence) => ({
+        name: occurrence.baseName,
+        coordinate: occurrence.coordinate,
+      })),
+    ];
 
-    for (const reference of file.typeReferences) {
-      if (seenNames.has(reference.name)) {
+    for (const occurrence of occurrences) {
+      if (localNames.has(occurrence.name) || seenNames.has(occurrence.name)) {
         continue;
       }
-      seenNames.add(reference.name);
+      seenNames.add(occurrence.name);
 
-      const declaration = context.uniqueDeclaration(reference.name);
+      const declaration = context.resolvedDeclarations(occurrence.name).find(
+        (candidate) => candidate.layer === ArchitectureLayer.Infrastructure,
+      );
       if (!declaration || declaration.layer !== ArchitectureLayer.Infrastructure) {
         continue;
       }
@@ -516,10 +624,10 @@ export class PresentationInfrastructureReferencePolicy
         file.diagnostic(
           PresentationInfrastructureReferencePolicy.ruleID,
           presentationRemediationMessage(
-            `Presentation must not depend on infrastructure type '${reference.name}' from ${declaration.repoRelativePath}.`,
+            `Presentation must not depend on infrastructure type '${occurrence.name}' from ${declaration.repoRelativePath}.`,
             `Remove the direct infrastructure dependency from ${file.repoRelativePath} and replace it with an inward-facing dependency.`,
           ),
-          reference.coordinate,
+          occurrence.coordinate,
         ),
       );
     }
@@ -531,6 +639,150 @@ export class PresentationInfrastructureReferencePolicy
 // =============================================================================
 // Stage 5 — Swift-parity Presentation policies (CleanArchitectureBoundaryPolicies)
 // =============================================================================
+
+/**
+ * `presentation.domain_policy_reference` — Presentation must not call or
+ * construct Domain policies directly; Application Services surface the
+ * resulting decision as passive contract data.
+ */
+export class PresentationDomainPolicyReferencePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "presentation.domain_policy_reference";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isPresentation) {
+      return [];
+    }
+
+    const localNames = new Set([
+      ...file.topLevelDeclarations.map((declaration) => declaration.name),
+      ...file.nestedNominalDeclarations.map((declaration) => declaration.name),
+    ]);
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenNames = new Set<string>();
+
+    for (const occurrence of iterateReferenceOccurrences(file)) {
+      if (localNames.has(occurrence.name) || seenNames.has(occurrence.name)) {
+        continue;
+      }
+      seenNames.add(occurrence.name);
+
+      const declarations = context.declarations.filter(
+        (declaration) => declaration.name === occurrence.name,
+      );
+      const declaration = declarations.find(
+        (candidate) => candidate.roleFolder === RoleFolder.DomainPolicies,
+      );
+      if (!declaration) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          PresentationDomainPolicyReferencePolicy.ruleID,
+          richRemediationMessage({
+            summary: `Presentation file '${file.repoRelativePath}' directly references Domain policy '${occurrence.name}' declared in '${declaration.repoRelativePath}', but policy decisions are made behind the Application service boundary and cross into Presentation as contract data${declarations.length > 1 ? "; the name is ambiguous and one matching declaration violates the Presentation boundary" : ""}.`,
+            categories: [
+              "policy invocation from a view, view model, route, or style",
+              "policy-input selection performed in Presentation",
+              "decision logic consumed as a static call instead of a contract field",
+            ],
+            signs: [
+              "a type reference, construction, or static member access in a Presentation file resolves to a declaration under Domain/Policies",
+              "Presentation chooses the arguments the policy decides over",
+              "the same policy also drives Application services or use cases",
+            ],
+            architecturalNote:
+              "Presentation's only entry into Application is the Application service. Domain policies are inner-layer decision rules whose outcomes are computed once behind the boundary, so a view calling a policy duplicates the decision path and lets the two copies drift.",
+            destination:
+              "the Application service or use case assembling the contract the view already consumes, surfacing the policy outcome as a passive field on that contract.",
+            decomposition: `Move the policy call and its input selection for '${occurrence.name}' into the Application service or use case, add the computed outcome to the contract, and replace the Presentation policy reference with a contract-field read.`,
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
+/**
+ * `presentation.state_transition_reference` — Presentation must not invoke
+ * Application StateTransitions directly; state mutation belongs behind the
+ * Application service boundary.
+ */
+export class PresentationStateTransitionReferencePolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "presentation.state_transition_reference";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isPresentation) {
+      return [];
+    }
+
+    const localNames = new Set([
+      ...file.topLevelDeclarations.map((declaration) => declaration.name),
+      ...file.nestedNominalDeclarations.map((declaration) => declaration.name),
+    ]);
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenNames = new Set<string>();
+
+    for (const occurrence of iterateReferenceOccurrences(file)) {
+      if (localNames.has(occurrence.name) || seenNames.has(occurrence.name)) {
+        continue;
+      }
+      seenNames.add(occurrence.name);
+
+      const declarations = context.declarations.filter(
+        (declaration) => declaration.name === occurrence.name,
+      );
+      const declaration = declarations.find(
+        (candidate) =>
+          candidate.roleFolder === RoleFolder.ApplicationStateTransitions,
+      );
+      if (!declaration) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          PresentationStateTransitionReferencePolicy.ruleID,
+          richRemediationMessage({
+            summary: `Presentation file '${file.repoRelativePath}' directly references Application StateTransition '${occurrence.name}' from ${declaration.repoRelativePath}${declarations.length > 1 ? "; the name is ambiguous and one matching declaration violates the Presentation boundary" : ""}.`,
+            categories: [
+              "next-state computation performed in Presentation",
+              "whole-state write submitted from a view instead of a field-level command",
+              "stale-snapshot resurrection risk from read-modify-write across the boundary",
+            ],
+            signs: [
+              "type reference, construction, or static member access resolves to Application/StateTransitions",
+              "Presentation holds the previous full state contract, applies the transition, and submits the result",
+              "sibling mutation flows use command contracts while this one computes state",
+            ],
+            architecturalNote:
+              "Presentation adapts user input into commands and triggers Application services; state-transition computation, field coalescing, and defaulting are Application behavior that must see the authoritative current state, not the view's possibly-stale snapshot.",
+            destination:
+              "Application/Contracts/Commands (an update command contract with optional fields for changed values) applied inside Application/Services or Application/UseCases via the existing StateTransition.",
+            decomposition:
+              "Define an update command contract carrying only the changed fields as optionals, add a service method that loads current state and applies the StateTransition inside Application, replace each Presentation StateTransition invocation with construction and submission of that command, remove the StateTransition reference from the Presentation file, and re-run the linter.",
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
 
 /**
  * `presentation.usecase_reference` — Presentation files must not depend
@@ -562,7 +814,9 @@ export class PresentationUseCaseReferencePolicy
       }
       seenNames.add(occurrence.name);
 
-      const declaration = context.uniqueDeclaration(occurrence.name);
+      const declaration = context.resolvedDeclarations(occurrence.name).find(
+        (candidate) => candidate.roleFolder === RoleFolder.ApplicationUseCases,
+      );
       if (!declaration || declaration.roleFolder !== RoleFolder.ApplicationUseCases) {
         continue;
       }
@@ -624,7 +878,10 @@ export class PresentationPortProtocolReferencePolicy
       }
       seenNames.add(occurrence.name);
 
-      const declaration = context.uniqueDeclaration(occurrence.name);
+      const declaration = context.resolvedDeclarations(occurrence.name).find(
+        (candidate) =>
+          candidate.roleFolder === RoleFolder.ApplicationPortsProtocols,
+      );
       if (
         !declaration ||
         declaration.roleFolder !== RoleFolder.ApplicationPortsProtocols
@@ -689,7 +946,11 @@ export class PresentationCompositionReferencePolicy
       }
       seenNames.add(occurrence.name);
 
-      const declaration = context.uniqueDeclaration(occurrence.name);
+      const declaration = context.resolvedDeclarations(occurrence.name).find(
+        (candidate) =>
+          candidate.layer === ArchitectureLayer.App ||
+          candidate.roleFolder === RoleFolder.AppDependencyInjection,
+      );
       if (
         !declaration ||
         (declaration.layer !== ArchitectureLayer.App &&
@@ -776,12 +1037,252 @@ export class PresentationDependencyResolutionPolicy
   }
 }
 
+/**
+ * `presentation.calendar_day_bucketing` — Presentation must not perform
+ * day/week bucketing or calendar membership policy. Application should expose
+ * precomputed buckets, week slots, and day flags on the consumed contract.
+ */
+export class PresentationCalendarDayBucketingPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "presentation.calendar_day_bucketing";
+
+  private static readonly memberNames = new Set([
+    "startOfDay",
+    "dateComponents",
+    "isDateInToday",
+    "isDateInYesterday",
+    "isDateInTomorrow",
+    "isDateInWeekend",
+    "isDate",
+    "isToday",
+    "isYesterday",
+    "isTomorrow",
+    "isWeekend",
+  ]);
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isPresentation) {
+      return [];
+    }
+
+    return file.memberCallOccurrences.flatMap((occurrence) => {
+      if (!PresentationCalendarDayBucketingPolicy.memberNames.has(occurrence.memberName)) {
+        return [];
+      }
+
+      return [
+        file.diagnostic(
+          PresentationCalendarDayBucketingPolicy.ruleID,
+          richRemediationMessage({
+            summary: `Presentation file '${file.repoRelativePath}' performs calendar day-bucketing via '${occurrence.baseName}.${occurrence.memberName}' at line ${occurrence.coordinate.line}.`,
+            categories: [
+              "week-window or day-membership computation in a view",
+              "consistency or streak math re-derived from raw entries instead of consumed from prepared state",
+              "hand-rolled fallback bucketing policy living in Presentation",
+            ],
+            signs: [
+              "startOfDay, dateComponents, isDateIn*, or clear isToday/isWeekend-style calendar calls appear in a Presentation file",
+              "entries are grouped into day or week buckets locally",
+              "the result parallels a value already computed behind the service boundary",
+            ],
+            architecturalNote:
+              "Day-membership and week-window decisions are policy owned inward by the Domain day-key policy and prepared consistency state; views render buckets and flags they are given, otherwise view math can drift from what the pipeline persists and schedules.",
+            destination:
+              "the Application UseCase or Service that assembles the consumed contract, exposing precomputed week slots, day flags, and progress as contract fields anchored on the same Domain day-key policy the save path uses.",
+            decomposition:
+              "Move the week-window derivation, day-bucket matching, and any legacy fallback redistribution into the use case that builds the consumed contract, anchor it on the Domain day-key policy used by the save path, add the resulting slots and flags to the contract, reduce the view to iterating the provided buckets with no calendar arithmetic, then re-run the linter.",
+          }),
+          occurrence.coordinate,
+        ),
+      ];
+    });
+  }
+}
+
+/**
+ * `presentation.platform_state_access` — Presentation must not read or write
+ * durable browser storage, process/bundle/env state, or raw platform handles
+ * directly. Mirrors Swift's `PresentationPlatformStateAccessPolicy` using
+ * web and Node surfaces visible in the TypeScript analyzer.
+ */
+export class PresentationPlatformStateAccessPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "presentation.platform_state_access";
+
+  evaluate(
+    file: ArchitectureFile,
+    _context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isPresentation) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seen = new Set<string>();
+
+    for (const occurrence of file.identifierOccurrences) {
+      if (occurrence.name === "localStorage" || occurrence.name === "sessionStorage") {
+        appendPresentationPlatformDiagnostic(
+          occurrence.name,
+          occurrence.name,
+          file,
+          occurrence.coordinate,
+          seen,
+          diagnostics,
+        );
+      }
+    }
+
+    for (const occurrence of file.staticMemberAccessOccurrences) {
+      const access = `${occurrence.baseName}.${occurrence.memberName}`;
+      if (
+        access === "document.cookie" ||
+        access === "navigator.clipboard" ||
+        access === "process.env" ||
+        access === "import.meta.env" ||
+        access === "globalThis.localStorage" ||
+        access === "globalThis.sessionStorage" ||
+        access === "window.localStorage" ||
+        access === "window.sessionStorage"
+      ) {
+        appendPresentationPlatformDiagnostic(
+          access,
+          normalizePresentationPlatformAccess(access),
+          file,
+          occurrence.coordinate,
+          seen,
+          diagnostics,
+        );
+      }
+    }
+
+    for (const occurrence of file.memberCallOccurrences) {
+      if (
+        occurrence.baseName === "localStorage" ||
+        occurrence.baseName === "sessionStorage"
+      ) {
+        appendPresentationPlatformDiagnostic(
+          `${occurrence.baseName}.${occurrence.memberName}`,
+          occurrence.baseName,
+          file,
+          occurrence.coordinate,
+          seen,
+          diagnostics,
+        );
+      }
+    }
+
+    for (const occurrence of file.typedMemberOccurrences) {
+      if (occurrence.typeNames.includes("Clipboard")) {
+        appendPresentationPlatformDiagnostic(
+          "Clipboard",
+          `Clipboard:${occurrence.name}`,
+          file,
+          occurrence.coordinate,
+          seen,
+          diagnostics,
+        );
+      }
+    }
+
+    for (const occurrence of file.constructionOccurrences) {
+      if (occurrence.typeName === "Clipboard") {
+        appendPresentationPlatformDiagnostic(
+          "Clipboard",
+          "Clipboard",
+          file,
+          occurrence.coordinate,
+          seen,
+          diagnostics,
+        );
+      }
+    }
+
+    return diagnostics;
+  }
+}
+
+export class PresentationCrossLayerWireLiteralPolicy
+  implements ArchitecturePolicyProtocol
+{
+  static readonly ruleID = "presentation.cross_layer_wire_literal";
+
+  evaluate(
+    file: ArchitectureFile,
+    context: ProjectContext,
+  ): readonly ArchitectureDiagnostic[] {
+    if (!file.classification.isPresentation) {
+      return [];
+    }
+
+    const diagnostics: ArchitectureDiagnostic[] = [];
+    const seenValues = new Set<string>();
+
+    for (const occurrence of file.stringLiteralOccurrences) {
+      const value = occurrence.value;
+      if (
+        seenValues.has(value) ||
+        !isPresentationCrossLayerWireLiteralCandidate(value)
+      ) {
+        continue;
+      }
+      seenValues.add(value);
+
+      const otherSite = context.literalSites(value).find(
+        (site) =>
+          site.repoRelativePath !== file.repoRelativePath &&
+          (site.layer === ArchitectureLayer.Infrastructure ||
+            (site.layer === ArchitectureLayer.Application &&
+              (site.roleFolder === RoleFolder.ApplicationUseCases ||
+                site.roleFolder === RoleFolder.ApplicationServices))),
+      );
+      if (!otherSite) {
+        continue;
+      }
+
+      diagnostics.push(
+        file.diagnostic(
+          PresentationCrossLayerWireLiteralPolicy.ruleID,
+          richRemediationMessage({
+            summary: `Presentation file '${file.repoRelativePath}' embeds wire-format token '${value}' that also appears in an Application or Infrastructure file ('${otherSite.repoRelativePath}').`,
+            categories: [
+              "presentation-side decoding of an encoding minted behind the service boundary",
+              "duplicated wire-format prefix drifting independently across layers",
+              "identifier translation performed after the contract crossed into Presentation",
+            ],
+            signs: [
+              "a token-like string literal ends with a separator character",
+              "the identical literal occurs in Application UseCases/Services or Infrastructure",
+              "Presentation strips, matches, or assembles identifiers around the token",
+            ],
+            architecturalNote:
+              "Encodings produced behind the Application service boundary must be resolved there; contracts that cross into Presentation carry fully resolved, passive data, never encoded references that Presentation must reverse-engineer.",
+            destination:
+              "the owning Application UseCase or Service, resolving the encoded reference before the contract is returned and keeping a single token owner that Infrastructure adapters share.",
+            decomposition:
+              "Resolve the encoded reference inside the owning Application UseCase or Service, reuse the existing Infrastructure resolver port where one exists, place the resolved identifier on the contract field Presentation consumes, delete the Presentation-side token constant and strip/decode logic, reduce the Presentation mapping to a one-to-one copy of contract fields, then re-run the linter.",
+          }),
+          occurrence.coordinate,
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+}
+
 export function makePresentationArchitecturePolicies(): readonly ArchitecturePolicyProtocol[] {
   return [
     new PresentationControllerShapePolicy(),
     new PresentationControllersServiceReferencePolicy(),
     new PresentationControllersUseCaseReferencePolicy(),
     new PresentationControllersFunctionSeamPolicy(),
+    new PresentationApplicationFunctionSeamPolicy(),
     new PresentationRouteShapePolicy(),
     new PresentationDTOsShapePolicy(),
     new PresentationPresentersShapePolicy(),
@@ -793,10 +1294,15 @@ export function makePresentationArchitecturePolicies(): readonly ArchitecturePol
     new PresentationViewsShapePolicy(),
     new PresentationStylesShapePolicy(),
     new PresentationInfrastructureReferencePolicy(),
+    new PresentationDomainPolicyReferencePolicy(),
+    new PresentationStateTransitionReferencePolicy(),
     new PresentationUseCaseReferencePolicy(),
     new PresentationPortProtocolReferencePolicy(),
     new PresentationCompositionReferencePolicy(),
     new PresentationDependencyResolutionPolicy(),
+    new PresentationCalendarDayBucketingPolicy(),
+    new PresentationPlatformStateAccessPolicy(),
+    new PresentationCrossLayerWireLiteralPolicy(),
   ];
 }
 
@@ -866,6 +1372,13 @@ function diagnoseSimplePresentationRoleFile(
   return diagnostics;
 }
 
+function declarationsNamed(
+  context: ProjectContext,
+  name: string,
+): readonly IndexedDeclaration[] {
+  return context.declarations.filter((declaration) => declaration.name === name);
+}
+
 function presentationRoleDeclarations(
   file: ArchitectureFile,
   options: {
@@ -909,6 +1422,74 @@ function hasAllowedPresentationErrorSuffix(name: string): boolean {
   return (
     name.endsWith("PresentationError") ||
     name.endsWith("PresentationErrors")
+  );
+}
+
+function normalizePresentationPlatformAccess(access: string): string {
+  if (
+    access.endsWith(".localStorage") ||
+    access.endsWith(".sessionStorage")
+  ) {
+    return access.split(".").at(-1) ?? access;
+  }
+  return access;
+}
+
+function appendPresentationPlatformDiagnostic(
+  access: string,
+  dedupeKey: string,
+  file: ArchitectureFile,
+  coordinate: { readonly line: number; readonly column: number },
+  seen: Set<string>,
+  diagnostics: ArchitectureDiagnostic[],
+): void {
+  const key = `${dedupeKey}:${coordinate.line}`;
+  if (seen.has(key)) {
+    return;
+  }
+  seen.add(key);
+
+  diagnostics.push(
+    file.diagnostic(
+      PresentationPlatformStateAccessPolicy.ruleID,
+      richRemediationMessage({
+        summary: `Presentation file '${file.repoRelativePath}' accesses platform storage, process state, or a raw platform handle directly via '${access}'.`,
+        categories: [
+          "durable browser storage read or written from Presentation",
+          "process, bundle, or environment state read outside the composition root",
+          "clipboard or platform handle accessed from a view, route, controller, or view model",
+        ],
+        signs: [
+          "localStorage, sessionStorage, window/globalThis storage, or document.cookie appears in a Presentation file",
+          "process.env or import.meta.env appears in a Presentation file",
+          "navigator.clipboard or a Clipboard-typed member appears in a Presentation file",
+        ],
+        architecturalNote:
+          "Durable state goes through inward ports and Application services, and platform access is wired at the composition root. Presentation receives plain values or Application service methods instead of raw storage, environment, clipboard, or platform handles.",
+        destination:
+          "Application/Services and Application/Ports/Protocols for durable settings or clipboard workflows; App/DependencyInjection or App/Runtime for environment and platform reads, injected into Presentation as plain data or a service API.",
+        decomposition:
+          "Move persisted settings behind an Application service and port, move clipboard side effects behind an Application service backed by an Infrastructure adapter, replace environment reads with values supplied by App/DependencyInjection, then re-run the linter.",
+      }),
+      coordinate,
+    ),
+  );
+}
+
+const PRESENTATION_WIRE_LITERAL_PATTERN = /^[A-Za-z0-9._:/-]+$/;
+const PRESENTATION_WIRE_LITERAL_TRAILING_SEPARATORS = new Set([
+  ".",
+  ":",
+  "-",
+  "_",
+  "/",
+]);
+
+function isPresentationCrossLayerWireLiteralCandidate(value: string): boolean {
+  return (
+    value.length >= 4 &&
+    PRESENTATION_WIRE_LITERAL_PATTERN.test(value) &&
+    PRESENTATION_WIRE_LITERAL_TRAILING_SEPARATORS.has(value.at(-1) ?? "")
   );
 }
 
